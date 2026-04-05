@@ -66,19 +66,32 @@
         border-radius: 12px;
         padding: .8rem;
         margin-bottom: 1rem;
+        align-items: end;
       }
 
-      select, button {
+      select, button, input {
         border: 1px solid var(--line);
         border-radius: 8px;
         padding: .45rem .6rem;
         background: #fff;
+        font: inherit;
       }
+
       button {
         background: var(--accent);
         color: #fff;
         border: none;
         cursor: pointer;
+      }
+
+      .ghost-btn {
+        background: #fff;
+        color: var(--text);
+        border: 1px solid var(--line);
+      }
+
+      .edit-mode-active {
+        background: #1348bd;
       }
 
       .table-wrap {
@@ -88,12 +101,13 @@
         overflow: auto;
       }
 
-      table { width: 100%; border-collapse: collapse; min-width: 700px; }
+      table { width: 100%; border-collapse: collapse; min-width: 850px; }
       th, td {
         border-bottom: 1px solid var(--line);
         text-align: left;
         padding: .65rem .7rem;
         font-size: .94rem;
+        vertical-align: top;
       }
       th { font-size: .82rem; color: var(--muted); text-transform: uppercase; letter-spacing: .02em; position: sticky; top: 0; background: #f7f9fc; }
 
@@ -101,6 +115,28 @@
       .status.open { background: var(--open); color: #992a2a; }
       .status.done { background: var(--ok); color: #15643c; }
       .notes { color: var(--muted); }
+
+      .edit-input,
+      .edit-select {
+        width: 100%;
+        min-width: 120px;
+      }
+
+      .delete-btn {
+        background: #c53535;
+        color: #fff;
+        padding: .35rem .5rem;
+      }
+
+      .mode-hint {
+        color: var(--muted);
+        font-size: .85rem;
+        margin-left: .2rem;
+      }
+
+      .hidden {
+        display: none;
+      }
     </style>
   </head>
   <body>
@@ -130,7 +166,10 @@
           </select>
         </label>
 
-        <button id="resetBtn">Reset filters</button>
+        <button id="resetBtn" class="ghost-btn">Reset filters</button>
+        <button id="editModeBtn">Aanpassmodus uit</button>
+        <button id="addRowBtn" class="hidden">Nieuwe regel toevoegen</button>
+        <span class="mode-hint" id="modeHint">Aanpassmodus staat uit (alleen lezen).</span>
       </div>
 
       <div class="table-wrap">
@@ -142,6 +181,7 @@
               <th>Status</th>
               <th>Oppas</th>
               <th>Notes</th>
+              <th id="actionsHead" class="hidden">Acties</th>
             </tr>
           </thead>
           <tbody id="rows"></tbody>
@@ -173,14 +213,27 @@
       const statusFilter = document.getElementById('statusFilter');
       const sitterFilter = document.getElementById('sitterFilter');
       const resetBtn = document.getElementById('resetBtn');
+      const editModeBtn = document.getElementById('editModeBtn');
+      const addRowBtn = document.getElementById('addRowBtn');
+      const actionsHead = document.getElementById('actionsHead');
+      const modeHint = document.getElementById('modeHint');
 
-      const sitters = [...new Set(data.map(d => d.sitter).filter(Boolean))];
-      sitters.forEach(name => {
-        const opt = document.createElement('option');
-        opt.value = name;
-        opt.textContent = name;
-        sitterFilter.appendChild(opt);
-      });
+      let isEditMode = false;
+
+      function refreshSitterFilterOptions() {
+        const current = sitterFilter.value;
+        const sitters = [...new Set(data.map(d => d.sitter).filter(Boolean))].sort();
+
+        sitterFilter.innerHTML = '<option value="all">All</option>';
+        sitters.forEach(name => {
+          const opt = document.createElement('option');
+          opt.value = name;
+          opt.textContent = name;
+          sitterFilter.appendChild(opt);
+        });
+
+        sitterFilter.value = sitters.includes(current) || current === 'all' ? current : 'all';
+      }
 
       function renderStats(list) {
         const done = list.filter(item => item.status === 'done').length;
@@ -192,14 +245,8 @@
         `;
       }
 
-      function renderRows() {
-        const filtered = data.filter(item => {
-          const statusOk = statusFilter.value === 'all' || item.status === statusFilter.value;
-          const sitterOk = sitterFilter.value === 'all' || item.sitter === sitterFilter.value;
-          return statusOk && sitterOk;
-        });
-
-        tbody.innerHTML = filtered.map(item => `
+      function renderDisplayRow(item) {
+        return `
           <tr>
             <td>${item.id}</td>
             <td>${item.date}</td>
@@ -207,10 +254,119 @@
             <td>${item.sitter || '—'}</td>
             <td class="notes">${item.notes || '—'}</td>
           </tr>
-        `).join('');
+        `;
+      }
 
+      function renderEditRow(item) {
+        return `
+          <tr data-id="${item.id}">
+            <td><input class="edit-input" data-field="id" type="number" value="${item.id}" /></td>
+            <td><input class="edit-input" data-field="date" type="text" value="${item.date}" /></td>
+            <td>
+              <select class="edit-select" data-field="status">
+                <option value="open" ${item.status === 'open' ? 'selected' : ''}>open</option>
+                <option value="done" ${item.status === 'done' ? 'selected' : ''}>done</option>
+              </select>
+            </td>
+            <td><input class="edit-input" data-field="sitter" type="text" value="${item.sitter}" /></td>
+            <td><input class="edit-input" data-field="notes" type="text" value="${item.notes}" /></td>
+            <td><button class="delete-btn" data-action="delete">Verwijderen</button></td>
+          </tr>
+        `;
+      }
+
+      function getFilteredData() {
+        return data.filter(item => {
+          const statusOk = statusFilter.value === 'all' || item.status === statusFilter.value;
+          const sitterOk = sitterFilter.value === 'all' || item.sitter === sitterFilter.value;
+          return statusOk && sitterOk;
+        });
+      }
+
+      function renderRows() {
+        const filtered = getFilteredData();
+        tbody.innerHTML = filtered.map(item => isEditMode ? renderEditRow(item) : renderDisplayRow(item)).join('');
         renderStats(filtered);
       }
+
+      function toggleEditMode() {
+        isEditMode = !isEditMode;
+        editModeBtn.textContent = isEditMode ? 'Aanpassmodus aan' : 'Aanpassmodus uit';
+        editModeBtn.classList.toggle('edit-mode-active', isEditMode);
+        addRowBtn.classList.toggle('hidden', !isEditMode);
+        actionsHead.classList.toggle('hidden', !isEditMode);
+        modeHint.textContent = isEditMode
+          ? 'Aanpassmodus staat aan (direct bewerken mogelijk).'
+          : 'Aanpassmodus staat uit (alleen lezen).';
+        renderRows();
+      }
+
+      function updateItem(id, field, value) {
+        const item = data.find(row => row.id === id);
+        if (!item) return;
+
+        if (field === 'id') {
+          const numeric = Number(value);
+          if (!Number.isNaN(numeric)) item.id = numeric;
+        } else {
+          item[field] = value;
+        }
+      }
+
+      function addNewRow() {
+        const nextId = data.reduce((max, row) => Math.max(max, row.id), 0) + 1;
+        data.push({
+          id: nextId,
+          date: 'Nieuwe datum',
+          status: 'open',
+          sitter: '',
+          notes: ''
+        });
+        refreshSitterFilterOptions();
+        renderRows();
+      }
+
+      function deleteRow(id) {
+        const index = data.findIndex(row => row.id === id);
+        if (index === -1) return;
+        data.splice(index, 1);
+        refreshSitterFilterOptions();
+        renderRows();
+      }
+
+      tbody.addEventListener('input', event => {
+        if (!isEditMode) return;
+
+        const target = event.target;
+        const row = target.closest('tr');
+        if (!row) return;
+
+        const id = Number(row.dataset.id);
+        const field = target.dataset.field;
+        if (!field || Number.isNaN(id)) return;
+
+        updateItem(id, field, target.value);
+
+        if (field === 'sitter') {
+          refreshSitterFilterOptions();
+        }
+
+        renderStats(getFilteredData());
+      });
+
+      tbody.addEventListener('click', event => {
+        if (!isEditMode) return;
+
+        const button = event.target.closest('button[data-action="delete"]');
+        if (!button) return;
+
+        const row = button.closest('tr');
+        if (!row) return;
+
+        const id = Number(row.dataset.id);
+        if (Number.isNaN(id)) return;
+        deleteRow(id);
+      });
 
       statusFilter.addEventListener('change', renderRows);
       sitterFilter.addEventListener('change', renderRows);
@@ -219,7 +375,10 @@
         sitterFilter.value = 'all';
         renderRows();
       });
+      editModeBtn.addEventListener('click', toggleEditMode);
+      addRowBtn.addEventListener('click', addNewRow);
 
+      refreshSitterFilterOptions();
       renderRows();
     </script>
   </body>
