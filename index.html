@@ -1,3 +1,226 @@
-<html>
-  
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Oppas Planner</title>
+    <style>
+      :root {
+        color-scheme: light;
+        --bg: #f6f8fb;
+        --card: #ffffff;
+        --line: #d8dee8;
+        --accent: #0057ff;
+        --ok: #dff5e5;
+        --open: #fde7e7;
+        --text: #1f2a37;
+        --muted: #5b6472;
+      }
+
+      * { box-sizing: border-box; }
+      body {
+        margin: 0;
+        font-family: Inter, system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+        background: var(--bg);
+        color: var(--text);
+      }
+
+      .wrapper {
+        max-width: 1100px;
+        margin: 2rem auto;
+        padding: 0 1rem 2rem;
+      }
+
+      .header {
+        display: flex;
+        justify-content: space-between;
+        gap: 1rem;
+        align-items: flex-end;
+        margin-bottom: 1rem;
+      }
+
+      .title h1 { margin: 0; font-size: 1.8rem; }
+      .title p { margin: .35rem 0 0; color: var(--muted); }
+
+      .stats {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(130px, 1fr));
+        gap: .65rem;
+      }
+
+      .stat {
+        background: var(--card);
+        border: 1px solid var(--line);
+        border-radius: 12px;
+        padding: .7rem .8rem;
+      }
+      .stat small { color: var(--muted); display:block; }
+      .stat strong { font-size: 1.15rem; }
+
+      .controls {
+        display: flex;
+        flex-wrap: wrap;
+        gap: .6rem;
+        background: var(--card);
+        border: 1px solid var(--line);
+        border-radius: 12px;
+        padding: .8rem;
+        margin-bottom: 1rem;
+      }
+
+      select, button {
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        padding: .45rem .6rem;
+        background: #fff;
+      }
+      button {
+        background: var(--accent);
+        color: #fff;
+        border: none;
+        cursor: pointer;
+      }
+
+      .table-wrap {
+        background: var(--card);
+        border: 1px solid var(--line);
+        border-radius: 12px;
+        overflow: auto;
+      }
+
+      table { width: 100%; border-collapse: collapse; min-width: 700px; }
+      th, td {
+        border-bottom: 1px solid var(--line);
+        text-align: left;
+        padding: .65rem .7rem;
+        font-size: .94rem;
+      }
+      th { font-size: .82rem; color: var(--muted); text-transform: uppercase; letter-spacing: .02em; position: sticky; top: 0; background: #f7f9fc; }
+
+      .status { border-radius: 999px; padding: .2rem .55rem; font-size: .8rem; font-weight: 700; }
+      .status.open { background: var(--open); color: #992a2a; }
+      .status.done { background: var(--ok); color: #15643c; }
+      .notes { color: var(--muted); }
+    </style>
+  </head>
+  <body>
+    <div class="wrapper">
+      <div class="header">
+        <div class="title">
+          <h1>Oppas Planner</h1>
+          <p>HTML recreation of your Google Sheet planning app.</p>
+        </div>
+        <div class="stats" id="stats"></div>
+      </div>
+
+      <div class="controls">
+        <label>
+          Status
+          <select id="statusFilter">
+            <option value="all">All</option>
+            <option value="open">Open</option>
+            <option value="done">Regeld</option>
+          </select>
+        </label>
+
+        <label>
+          Oppas
+          <select id="sitterFilter">
+            <option value="all">All</option>
+          </select>
+        </label>
+
+        <button id="resetBtn">Reset filters</button>
+      </div>
+
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>#</th>
+              <th>Date</th>
+              <th>Status</th>
+              <th>Oppas</th>
+              <th>Notes</th>
+            </tr>
+          </thead>
+          <tbody id="rows"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <script>
+      const data = [
+        { id: 181, date: 'Thu 26 Feb', status: 'done', sitter: 'Lars', notes: '' },
+        { id: 185, date: 'Mon 2 Mar', status: 'done', sitter: 'Nina', notes: '' },
+        { id: 193, date: 'Tue 10 Mar', status: 'open', sitter: '', notes: '' },
+        { id: 208, date: 'Wed 25 Mar', status: 'done', sitter: 'Maaike', notes: 'Maaike alleen middagronde mogelijk' },
+        { id: 214, date: 'Tue 31 Mar', status: 'done', sitter: 'Bob', notes: '' },
+        { id: 221, date: 'Tue 7 Apr', status: 'done', sitter: 'Caro', notes: '' },
+        { id: 248, date: 'Mon 4 May', status: 'open', sitter: '', notes: '' },
+        { id: 256, date: 'Tue 12 May', status: 'open', sitter: '', notes: '' },
+        { id: 264, date: 'Wed 20 May', status: 'done', sitter: 'Charlie', notes: '' },
+        { id: 278, date: 'Wed 3 Jun', status: 'open', sitter: '', notes: '' },
+        { id: 304, date: 'Mon 29 Jun', status: 'open', sitter: '', notes: '' },
+        { id: 306, date: 'Wed 1 Jul', status: 'done', sitter: 'Wilma', notes: '' },
+        { id: 313, date: 'Wed 8 Jul', status: 'done', sitter: 'Nieke', notes: '' },
+        { id: 320, date: 'Wed 15 Jul', status: 'done', sitter: 'K&P Wilma', notes: '' },
+        { id: 335, date: 'Thu 30 Jul', status: 'open', sitter: '', notes: '' }
+      ];
+
+      const tbody = document.getElementById('rows');
+      const stats = document.getElementById('stats');
+      const statusFilter = document.getElementById('statusFilter');
+      const sitterFilter = document.getElementById('sitterFilter');
+      const resetBtn = document.getElementById('resetBtn');
+
+      const sitters = [...new Set(data.map(d => d.sitter).filter(Boolean))];
+      sitters.forEach(name => {
+        const opt = document.createElement('option');
+        opt.value = name;
+        opt.textContent = name;
+        sitterFilter.appendChild(opt);
+      });
+
+      function renderStats(list) {
+        const done = list.filter(item => item.status === 'done').length;
+        const open = list.filter(item => item.status === 'open').length;
+        stats.innerHTML = `
+          <div class="stat"><small>Total</small><strong>${list.length}</strong></div>
+          <div class="stat"><small>Regeld</small><strong>${done}</strong></div>
+          <div class="stat"><small>Open</small><strong>${open}</strong></div>
+        `;
+      }
+
+      function renderRows() {
+        const filtered = data.filter(item => {
+          const statusOk = statusFilter.value === 'all' || item.status === statusFilter.value;
+          const sitterOk = sitterFilter.value === 'all' || item.sitter === sitterFilter.value;
+          return statusOk && sitterOk;
+        });
+
+        tbody.innerHTML = filtered.map(item => `
+          <tr>
+            <td>${item.id}</td>
+            <td>${item.date}</td>
+            <td><span class="status ${item.status}">${item.status === 'done' ? '✅ geregeld' : '❌ open'}</span></td>
+            <td>${item.sitter || '—'}</td>
+            <td class="notes">${item.notes || '—'}</td>
+          </tr>
+        `).join('');
+
+        renderStats(filtered);
+      }
+
+      statusFilter.addEventListener('change', renderRows);
+      sitterFilter.addEventListener('change', renderRows);
+      resetBtn.addEventListener('click', () => {
+        statusFilter.value = 'all';
+        sitterFilter.value = 'all';
+        renderRows();
+      });
+
+      renderRows();
+    </script>
+  </body>
 </html>
