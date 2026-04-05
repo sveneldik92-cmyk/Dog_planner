@@ -18,6 +18,7 @@
       }
 
       * { box-sizing: border-box; }
+
       body {
         margin: 0;
         font-family: Inter, system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
@@ -69,6 +70,12 @@
         align-items: end;
       }
 
+      label {
+        display: flex;
+        flex-direction: column;
+        gap: .25rem;
+      }
+
       select, button, input {
         border: 1px solid var(--line);
         border-radius: 8px;
@@ -101,7 +108,8 @@
         overflow: auto;
       }
 
-      table { width: 100%; border-collapse: collapse; min-width: 850px; }
+      table { width: 100%; border-collapse: collapse; min-width: 700px; }
+
       th, td {
         border-bottom: 1px solid var(--line);
         text-align: left;
@@ -109,7 +117,16 @@
         font-size: .94rem;
         vertical-align: top;
       }
-      th { font-size: .82rem; color: var(--muted); text-transform: uppercase; letter-spacing: .02em; position: sticky; top: 0; background: #f7f9fc; }
+
+      th {
+        font-size: .82rem;
+        color: var(--muted);
+        text-transform: uppercase;
+        letter-spacing: .02em;
+        position: sticky;
+        top: 0;
+        background: #f7f9fc;
+      }
 
       .status { border-radius: 999px; padding: .2rem .55rem; font-size: .8rem; font-weight: 700; }
       .status.open { background: var(--open); color: #992a2a; }
@@ -136,6 +153,138 @@
 
       .hidden {
         display: none;
+      }
+
+      @media (max-width: 768px) {
+        .wrapper {
+          margin: .75rem auto;
+          padding: 0 .65rem 1rem;
+        }
+
+        .header {
+          flex-direction: column;
+          align-items: stretch;
+        }
+
+        .title h1 {
+          font-size: 1.45rem;
+        }
+
+        .stats {
+          grid-template-columns: repeat(3, minmax(0, 1fr));
+        }
+
+        .controls {
+          display: grid;
+          grid-template-columns: 1fr 1fr;
+          align-items: stretch;
+          gap: .65rem;
+          padding: .75rem;
+        }
+
+        .controls label,
+        .controls button,
+        .mode-hint {
+          width: 100%;
+        }
+
+        select,
+        button,
+        input {
+          min-height: 44px;
+        }
+
+        .mode-hint {
+          grid-column: 1 / -1;
+          margin-left: 0;
+        }
+
+        .table-wrap {
+          border: none;
+          background: transparent;
+        }
+
+        table,
+        tbody,
+        tr,
+        td {
+          display: block;
+          width: 100%;
+        }
+
+        table {
+          min-width: 0;
+          border-collapse: separate;
+          border-spacing: 0 .55rem;
+        }
+
+        thead {
+          display: none;
+        }
+
+        tr {
+          background: var(--card);
+          border: 1px solid var(--line);
+          border-radius: 12px;
+          padding: .35rem .75rem;
+        }
+
+        td {
+          border-bottom: 1px dashed var(--line);
+          padding: .55rem 0;
+          display: flex;
+          justify-content: space-between;
+          gap: .75rem;
+          align-items: center;
+        }
+
+        td::before {
+          content: attr(data-label);
+          font-size: .74rem;
+          color: var(--muted);
+          text-transform: uppercase;
+          letter-spacing: .03em;
+          font-weight: 600;
+          flex-shrink: 0;
+        }
+
+        td:last-child {
+          border-bottom: none;
+        }
+
+        .edit-input,
+        .edit-select {
+          min-width: 0;
+          max-width: 66%;
+        }
+
+        .notes {
+          text-align: right;
+          max-width: 66%;
+        }
+      }
+
+      @media (max-width: 560px) {
+        .controls {
+          grid-template-columns: 1fr;
+        }
+
+        .stats {
+          grid-template-columns: repeat(3, minmax(0, 1fr));
+          gap: .45rem;
+        }
+
+        .stat {
+          padding: .55rem .6rem;
+        }
+
+        .stat strong {
+          font-size: 1rem;
+        }
+
+        td {
+          align-items: flex-start;
+        }
       }
     </style>
   </head>
@@ -176,7 +325,6 @@
         <table>
           <thead>
             <tr>
-              <th>#</th>
               <th>Date</th>
               <th>Status</th>
               <th>Oppas</th>
@@ -207,6 +355,42 @@
         { id: 320, date: 'Wed 15 Jul', status: 'done', sitter: 'K&P Wilma', notes: '' },
         { id: 335, date: 'Thu 30 Jul', status: 'open', sitter: '', notes: '' }
       ];
+
+      const monthToNumber = {
+        Jan: '01', Feb: '02', Mar: '03', Apr: '04', May: '05', Jun: '06',
+        Jul: '07', Aug: '08', Sep: '09', Oct: '10', Nov: '11', Dec: '12'
+      };
+      const currentYear = new Date().getFullYear();
+
+      function normalizeDateValue(value) {
+        if (!value) return '';
+        if (/^\d{4}-\d{2}-\d{2}$/.test(value)) return value;
+
+        const legacyMatch = value.match(/^[A-Za-z]{3}\s+(\d{1,2})\s+([A-Za-z]{3})$/);
+        if (!legacyMatch) return '';
+
+        const day = legacyMatch[1].padStart(2, '0');
+        const month = monthToNumber[legacyMatch[2]];
+        if (!month) return '';
+
+        return `${currentYear}-${month}-${day}`;
+      }
+
+      function formatDateForDisplay(value) {
+        if (!value) return '—';
+        const parsed = new Date(`${value}T00:00:00`);
+        if (Number.isNaN(parsed.getTime())) return value;
+
+        return new Intl.DateTimeFormat('en-GB', {
+          weekday: 'short',
+          day: 'numeric',
+          month: 'short'
+        }).format(parsed).replace(',', '');
+      }
+
+      data.forEach(item => {
+        item.date = normalizeDateValue(item.date);
+      });
 
       const tbody = document.getElementById('rows');
       const stats = document.getElementById('stats');
@@ -248,11 +432,10 @@
       function renderDisplayRow(item) {
         return `
           <tr>
-            <td>${item.id}</td>
-            <td>${item.date}</td>
-            <td><span class="status ${item.status}">${item.status === 'done' ? '✅ geregeld' : '❌ open'}</span></td>
-            <td>${item.sitter || '—'}</td>
-            <td class="notes">${item.notes || '—'}</td>
+            <td data-label="Date">${formatDateForDisplay(item.date)}</td>
+            <td data-label="Status"><span class="status ${item.status}">${item.status === 'done' ? '✅ geregeld' : '❌ open'}</span></td>
+            <td data-label="Oppas">${item.sitter || '—'}</td>
+            <td data-label="Notes" class="notes">${item.notes || '—'}</td>
           </tr>
         `;
       }
@@ -260,17 +443,16 @@
       function renderEditRow(item) {
         return `
           <tr data-id="${item.id}">
-            <td><input class="edit-input" data-field="id" type="number" value="${item.id}" /></td>
-            <td><input class="edit-input" data-field="date" type="text" value="${item.date}" /></td>
-            <td>
+            <td data-label="Date"><input class="edit-input" data-field="date" type="date" value="${item.date}" /></td>
+            <td data-label="Status">
               <select class="edit-select" data-field="status">
                 <option value="open" ${item.status === 'open' ? 'selected' : ''}>open</option>
                 <option value="done" ${item.status === 'done' ? 'selected' : ''}>done</option>
               </select>
             </td>
-            <td><input class="edit-input" data-field="sitter" type="text" value="${item.sitter}" /></td>
-            <td><input class="edit-input" data-field="notes" type="text" value="${item.notes}" /></td>
-            <td><button class="delete-btn" data-action="delete">Verwijderen</button></td>
+            <td data-label="Oppas"><input class="edit-input" data-field="sitter" type="text" value="${item.sitter}" /></td>
+            <td data-label="Notes"><input class="edit-input" data-field="notes" type="text" value="${item.notes}" /></td>
+            <td data-label="Acties"><button class="delete-btn" data-action="delete">Verwijderen</button></td>
           </tr>
         `;
       }
@@ -305,19 +487,14 @@
         const item = data.find(row => row.id === id);
         if (!item) return;
 
-        if (field === 'id') {
-          const numeric = Number(value);
-          if (!Number.isNaN(numeric)) item.id = numeric;
-        } else {
-          item[field] = value;
-        }
+        item[field] = value;
       }
 
       function addNewRow() {
         const nextId = data.reduce((max, row) => Math.max(max, row.id), 0) + 1;
         data.push({
           id: nextId,
-          date: 'Nieuwe datum',
+          date: new Date().toISOString().slice(0, 10),
           status: 'open',
           sitter: '',
           notes: ''
