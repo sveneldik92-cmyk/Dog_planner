@@ -692,7 +692,9 @@
             }));
             deletedCount += 1;
           });
-          await batch.then();
+          if (resp.result.items.length) {
+            await executeBatch(batch);
+          }
           pageToken = resp.result.nextPageToken;
         } while (pageToken);
         return deletedCount;
@@ -706,8 +708,32 @@
             resource: ev
           }));
         });
-        await batch.then();
+        if (events.length) {
+          await executeBatch(batch);
+        }
         return events.length;
+      }
+
+      function executeBatch(batch) {
+        return new Promise((resolve, reject) => {
+          batch.execute((response) => {
+            if (!response) {
+              resolve();
+              return;
+            }
+
+            const responses = Object.values(response);
+            const failedResponse = responses.find(item => item?.status && Number(item.status) >= 400);
+            if (failedResponse) {
+              reject({
+                message: failedResponse.body || `Batch request failed with status ${failedResponse.status}`,
+                status: failedResponse.status
+              });
+              return;
+            }
+            resolve(response);
+          });
+        });
       }
 
       function toDateTimeWithOffset(dateStr, hour, minute) {
