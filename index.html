@@ -404,6 +404,7 @@
             <tr>
               <th>Date</th>
               <th>Status</th>
+              <th>Purpose</th>
               <th>Oppas</th>
               <th>Notes</th>
               <th id="actionsHead" class="hidden">Acties</th>
@@ -470,6 +471,7 @@
         Jan: '01', Feb: '02', Mar: '03', Apr: '04', May: '05', Jun: '06',
         Jul: '07', Aug: '08', Sep: '09', Oct: '10', Nov: '11', Dec: '12'
       };
+      const PURPOSE_OPTIONS = ['Walk', 'Play', 'Training', 'Vet', 'Grooming'];
       const currentYear = new Date().getFullYear();
 
       function normalizeDateValue(value) {
@@ -500,6 +502,7 @@
 
       data.forEach(item => {
         item.date = normalizeDateValue(item.date);
+        item.purpose = item.purpose || '';
       });
 
       const tbody = document.getElementById('rows');
@@ -765,13 +768,14 @@
               ? `Chip opas: ${sitterText}`
               : 'Problem chip: Unassigned';
             const statusText = item.status === 'done' ? 'done' : 'open';
+            const purposeText = item.purpose || 'General';
             const notesText = item.notes ? `Notes: ${item.notes}` : 'Notes: —';
 
             return {
               summary,
               start: { date: item.date },
               end: { date: endDate },
-              description: `Status: ${statusText}\n${notesText}`
+              description: `Status: ${statusText}\nPurpose: ${purposeText}\n${notesText}`
             };
           })
           .filter(Boolean);
@@ -807,9 +811,32 @@
           <tr data-id="${item.id}">
             <td data-label="Date">${formatDateForDisplay(item.date)}</td>
             <td data-label="Status"><span class="status ${item.status}">${item.status === 'done' ? '✅ geregeld' : '❌ open'}</span></td>
+            <td data-label="Purpose">${item.purpose || '—'}</td>
             <td data-label="Oppas">${item.sitter || '—'}</td>
             <td data-label="Notes" class="notes">${item.notes || '—'}</td>
           </tr>
+        `;
+      }
+
+      function getPurposeOptions() {
+        return [...new Set([
+          ...PURPOSE_OPTIONS,
+          ...data.map(item => item.purpose).filter(Boolean)
+        ])].sort((a, b) => a.localeCompare(b));
+      }
+
+      function renderPurposeSelect(item) {
+        const options = getPurposeOptions();
+        const optionTags = options
+          .map(option => `<option value="${option}" ${item.purpose === option ? 'selected' : ''}>${option}</option>`)
+          .join('');
+
+        return `
+          <select class="edit-select" data-field="purpose">
+            <option value="" ${!item.purpose ? 'selected' : ''}>—</option>
+            ${optionTags}
+            <option value="__add_new__">+ Add new…</option>
+          </select>
         `;
       }
 
@@ -823,6 +850,7 @@
                 <option value="done" ${item.status === 'done' ? 'selected' : ''}>done</option>
               </select>
             </td>
+            <td data-label="Purpose">${renderPurposeSelect(item)}</td>
             <td data-label="Oppas"><input class="edit-input" data-field="sitter" type="text" value="${item.sitter}" /></td>
             <td data-label="Notes"><input class="edit-input" data-field="notes" type="text" value="${item.notes}" /></td>
             <td data-label="Acties"><button class="delete-btn" data-action="delete">Verwijderen</button></td>
@@ -869,6 +897,7 @@
           id: nextId,
           date: new Date().toISOString().slice(0, 10),
           status: 'open',
+          purpose: '',
           sitter: '',
           notes: ''
         });
@@ -913,6 +942,33 @@
         }
 
         renderStats(getFilteredData());
+      });
+
+      tbody.addEventListener('change', event => {
+        if (!isEditMode) return;
+
+        const target = event.target;
+        if (target.dataset.field !== 'purpose') return;
+
+        const row = target.closest('tr');
+        if (!row) return;
+        const id = Number(row.dataset.id);
+        if (Number.isNaN(id)) return;
+
+        if (target.value === '__add_new__') {
+          const customPurpose = window.prompt('Type a new purpose value:');
+          if (!customPurpose || !customPurpose.trim()) {
+            const item = data.find(entry => entry.id === id);
+            target.value = item?.purpose || '';
+            return;
+          }
+
+          updateItem(id, 'purpose', customPurpose.trim());
+          renderRows();
+          return;
+        }
+
+        updateItem(id, 'purpose', target.value);
       });
 
       tbody.addEventListener('click', event => {
