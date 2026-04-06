@@ -406,7 +406,6 @@
             <tr>
               <th>Date</th>
               <th>Status</th>
-              <th>Purpose</th>
               <th>Oppas</th>
               <th>Notes</th>
               <th id="actionsHead" class="hidden">Acties</th>
@@ -473,7 +472,7 @@
         Jan: '01', Feb: '02', Mar: '03', Apr: '04', May: '05', Jun: '06',
         Jul: '07', Aug: '08', Sep: '09', Oct: '10', Nov: '11', Dec: '12'
       };
-      const PURPOSE_OPTIONS = ['Walk', 'Play', 'Training', 'Vet', 'Grooming'];
+      const OPPAS_OPTIONS = ['K&P', 'Maaike', 'Sven', 'Wilma'];
       const currentYear = new Date().getFullYear();
 
       function normalizeDateValue(value) {
@@ -505,7 +504,6 @@
 
       data.forEach(item => {
         item.date = normalizeDateValue(item.date);
-        item.purpose = item.purpose || '';
       });
 
       const tbody = document.getElementById('rows');
@@ -786,14 +784,13 @@
               ? `Chip opas: ${sitterText}`
               : 'Problem chip: Unassigned';
             const statusText = item.status === 'done' ? 'done' : 'open';
-            const purposeText = item.purpose || 'General';
             const notesText = item.notes ? `Notes: ${item.notes}` : 'Notes: —';
 
             return {
               summary,
               start: { date: item.date },
               end: { date: endDate },
-              description: `Status: ${statusText}\nPurpose: ${purposeText}\n${notesText}`
+              description: `Status: ${statusText}\n${notesText}`
             };
           })
           .filter(Boolean);
@@ -801,7 +798,7 @@
 
       function refreshSitterFilterOptions() {
         const current = sitterFilter.value;
-        const sitters = [...new Set(data.map(d => d.sitter).filter(Boolean))].sort();
+        const sitters = getOppasOptions();
 
         sitterFilter.innerHTML = '<option value="all">All</option>';
         sitters.forEach(name => {
@@ -829,29 +826,28 @@
           <tr data-id="${item.id}">
             <td data-label="Date">${formatDateForDisplay(item.date)}</td>
             <td data-label="Status"><span class="status ${item.status}">${item.status === 'done' ? '✅ geregeld' : '❌ open'}</span></td>
-            <td data-label="Purpose">${item.purpose || '—'}</td>
-            <td data-label="Oppas">${item.sitter || '—'}</td>
+                        <td data-label="Oppas">${item.sitter || '—'}</td>
             <td data-label="Notes" class="notes">${item.notes || '—'}</td>
           </tr>
         `;
       }
 
-      function getPurposeOptions() {
+      function getOppasOptions() {
         return [...new Set([
-          ...PURPOSE_OPTIONS,
-          ...data.map(item => item.purpose).filter(Boolean)
+          ...OPPAS_OPTIONS,
+          ...data.map(item => item.sitter).filter(Boolean)
         ])].sort((a, b) => a.localeCompare(b));
       }
 
-      function renderPurposeSelect(item) {
-        const options = getPurposeOptions();
+      function renderOppasSelect(item) {
+        const options = getOppasOptions();
         const optionTags = options
-          .map(option => `<option value="${option}" ${item.purpose === option ? 'selected' : ''}>${option}</option>`)
+          .map(option => `<option value="${option}" ${item.sitter === option ? 'selected' : ''}>${option}</option>`)
           .join('');
 
         return `
-          <select class="edit-select" data-field="purpose">
-            <option value="" ${!item.purpose ? 'selected' : ''}>—</option>
+          <select class="edit-select" data-field="sitter">
+            <option value="" ${!item.sitter ? 'selected' : ''}>—</option>
             ${optionTags}
             <option value="__add_new__">+ Add new…</option>
           </select>
@@ -868,8 +864,7 @@
                 <option value="done" ${item.status === 'done' ? 'selected' : ''}>done</option>
               </select>
             </td>
-            <td data-label="Purpose">${renderPurposeSelect(item)}</td>
-            <td data-label="Oppas"><input class="edit-input" data-field="sitter" type="text" value="${item.sitter}" /></td>
+            <td data-label="Oppas">${renderOppasSelect(item)}</td>
             <td data-label="Notes"><input class="edit-input" data-field="notes" type="text" value="${item.notes}" /></td>
             <td data-label="Acties"><button class="delete-btn" data-action="delete">Verwijderen</button></td>
           </tr>
@@ -924,7 +919,6 @@
           id: nextId,
           date: new Date().toISOString().slice(0, 10),
           status: 'open',
-          purpose: '',
           sitter: '',
           notes: ''
         });
@@ -975,7 +969,7 @@
         if (!isEditMode) return;
 
         const target = event.target;
-        if (target.dataset.field !== 'purpose') return;
+        if (target.dataset.field !== 'sitter') return;
 
         const row = target.closest('tr');
         if (!row) return;
@@ -983,19 +977,22 @@
         if (Number.isNaN(id)) return;
 
         if (target.value === '__add_new__') {
-          const customPurpose = window.prompt('Type a new purpose value:');
-          if (!customPurpose || !customPurpose.trim()) {
+          const customOppas = window.prompt('Type a new oppas value:');
+          if (!customOppas || !customOppas.trim()) {
             const item = data.find(entry => entry.id === id);
-            target.value = item?.purpose || '';
+            target.value = item?.sitter || '';
             return;
           }
 
-          updateItem(id, 'purpose', customPurpose.trim());
+          updateItem(id, 'sitter', customOppas.trim());
+          refreshSitterFilterOptions();
           renderRows();
           return;
         }
 
-        updateItem(id, 'purpose', target.value);
+        updateItem(id, 'sitter', target.value);
+        refreshSitterFilterOptions();
+        renderStats(getFilteredData());
       });
 
       tbody.addEventListener('click', event => {
