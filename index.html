@@ -380,8 +380,8 @@
           Status
           <select id="statusFilter">
             <option value="all">All</option>
-            <option value="open">Open</option>
-            <option value="done">Regeld</option>
+            <option value="open">Opas</option>
+            <option value="done">Geregeld</option>
           </select>
         </label>
 
@@ -405,7 +405,7 @@
           <thead>
             <tr>
               <th>Date</th>
-              <th>Status</th>
+              <th id="statusHead">Status</th>
               <th>Oppas</th>
               <th>Notes</th>
               <th id="actionsHead" class="hidden">Acties</th>
@@ -444,28 +444,28 @@
       let syncInProgress = false;
 
       const data = [
-        { id: 1, date: '2026-04-07', status: 'done', sitter: 'Wilma', notes: '' },
-        { id: 2, date: '2026-04-09', status: 'done', sitter: 'K&P', notes: '' },
-        { id: 3, date: '2026-04-10', status: 'done', sitter: 'Sven', notes: '' },
-        { id: 4, date: '2026-04-13', status: 'done', sitter: 'Wilma', notes: '' },
-        { id: 5, date: '2026-04-15', status: 'done', sitter: 'Maaike', notes: '' },
-        { id: 6, date: '2026-04-16', status: 'done', sitter: 'K&P', notes: '' },
-        { id: 7, date: '2026-04-17', status: 'done', sitter: 'Sven', notes: '' },
-        { id: 8, date: '2026-04-20', status: 'done', sitter: 'Wilma', notes: '' },
-        { id: 9, date: '2026-04-21', status: 'done', sitter: 'Wilma', notes: '' },
-        { id: 10, date: '2026-04-22', status: 'done', sitter: 'Maaike', notes: '' },
-        { id: 11, date: '2026-04-24', status: 'done', sitter: 'K&P', notes: '' },
-        { id: 12, date: '2026-04-29', status: 'done', sitter: 'Maaike', notes: '' },
-        { id: 13, date: '2026-04-30', status: 'done', sitter: 'Wilma', notes: '' },
-        { id: 14, date: '2026-05-04', status: 'open', sitter: '', notes: '' },
-        { id: 15, date: '2026-05-06', status: 'open', sitter: '', notes: '' },
-        { id: 16, date: '2026-05-07', status: 'open', sitter: '', notes: '' },
-        { id: 17, date: '2026-05-11', status: 'open', sitter: '', notes: '' },
-        { id: 18, date: '2026-05-12', status: 'open', sitter: '', notes: '' },
-        { id: 19, date: '2026-05-14', status: 'done', sitter: 'K&P', notes: '' },
-        { id: 20, date: '2026-05-15', status: 'done', sitter: 'K&P', notes: '' },
-        { id: 21, date: '2026-05-16', status: 'done', sitter: 'K&P', notes: '' },
-        { id: 22, date: '2026-05-17', status: 'done', sitter: 'K&P', notes: '' }
+        { id: 1, date: '2026-04-07', sitter: 'Wilma', notes: '' },
+        { id: 2, date: '2026-04-09', sitter: 'K&P', notes: '' },
+        { id: 3, date: '2026-04-10', sitter: 'Sven', notes: '' },
+        { id: 4, date: '2026-04-13', sitter: 'Wilma', notes: '' },
+        { id: 5, date: '2026-04-15', sitter: 'Maaike', notes: '' },
+        { id: 6, date: '2026-04-16', sitter: 'K&P', notes: '' },
+        { id: 7, date: '2026-04-17', sitter: 'Sven', notes: '' },
+        { id: 8, date: '2026-04-20', sitter: 'Wilma', notes: '' },
+        { id: 9, date: '2026-04-21', sitter: 'Wilma', notes: '' },
+        { id: 10, date: '2026-04-22', sitter: 'Maaike', notes: '' },
+        { id: 11, date: '2026-04-24', sitter: 'K&P', notes: '' },
+        { id: 12, date: '2026-04-29', sitter: 'Maaike', notes: '' },
+        { id: 13, date: '2026-04-30', sitter: 'Wilma', notes: '' },
+        { id: 14, date: '2026-05-04', sitter: '', notes: '' },
+        { id: 15, date: '2026-05-06', sitter: '', notes: '' },
+        { id: 16, date: '2026-05-07', sitter: '', notes: '' },
+        { id: 17, date: '2026-05-11', sitter: '', notes: '' },
+        { id: 18, date: '2026-05-12', sitter: '', notes: '' },
+        { id: 19, date: '2026-05-14', sitter: 'K&P', notes: '' },
+        { id: 20, date: '2026-05-15', sitter: 'K&P', notes: '' },
+        { id: 21, date: '2026-05-16', sitter: 'K&P', notes: '' },
+        { id: 22, date: '2026-05-17', sitter: 'K&P', notes: '' }
       ];
 
       const monthToNumber = {
@@ -516,6 +516,7 @@
       const editModeBtn = document.getElementById('editModeBtn');
       const addRowBtn = document.getElementById('addRowBtn');
       const actionsHead = document.getElementById('actionsHead');
+      const statusHead = document.getElementById('statusHead');
       const modeHint = document.getElementById('modeHint');
       const signinBtn = document.getElementById('signin');
       const syncBtn = document.getElementById('sync');
@@ -529,6 +530,10 @@
       let showPastDates = false;
       let openOnlyMode = false;
 
+      function deriveStatus(item) {
+        return item.date && item.sitter?.trim() ? 'done' : 'open';
+      }
+
       function startOfToday() {
         const today = new Date();
         today.setHours(0, 0, 0, 0);
@@ -537,7 +542,7 @@
 
       function syncOpenOnlyStateWithFilter() {
         openOnlyMode = statusFilter.value === 'open';
-        openOnlyBtn.textContent = openOnlyMode ? 'Show all statuses' : 'Open only';
+        openOnlyBtn.textContent = openOnlyMode ? 'Show all statuses' : 'Opas only';
       }
 
       function showFeedbackDialog({ title, message, details = '' }) {
@@ -783,7 +788,7 @@
             const summary = item.sitter
               ? `Chip opas: ${sitterText}`
               : 'Problem chip: Unassigned';
-            const statusText = item.status === 'done' ? 'done' : 'open';
+            const statusText = deriveStatus(item) === 'done' ? 'geregeld' : 'opas';
             const notesText = item.notes ? `Notes: ${item.notes}` : 'Notes: —';
 
             return {
@@ -812,21 +817,22 @@
       }
 
       function renderStats(list) {
-        const done = list.filter(item => item.status === 'done').length;
-        const open = list.filter(item => item.status === 'open').length;
+        const done = list.filter(item => deriveStatus(item) === 'done').length;
+        const open = list.filter(item => deriveStatus(item) === 'open').length;
         stats.innerHTML = `
           <div class="stat"><small>Total</small><strong>${list.length}</strong></div>
-          <div class="stat"><small>Regeld</small><strong>${done}</strong></div>
-          <div class="stat"><small>Open</small><strong>${open}</strong></div>
+          <div class="stat"><small>Geregeld</small><strong>${done}</strong></div>
+          <div class="stat"><small>Opas</small><strong>${open}</strong></div>
         `;
       }
 
       function renderDisplayRow(item) {
+        const status = deriveStatus(item);
         return `
           <tr data-id="${item.id}">
             <td data-label="Date">${formatDateForDisplay(item.date)}</td>
-            <td data-label="Status"><span class="status ${item.status}">${item.status === 'done' ? '✅ geregeld' : '❌ open'}</span></td>
-                        <td data-label="Oppas">${item.sitter || '—'}</td>
+            <td data-label="Status"><span class="status ${status}">${status === 'done' ? '✅ geregeld' : '❌ opas'}</span></td>
+            <td data-label="Oppas">${item.sitter || '—'}</td>
             <td data-label="Notes" class="notes">${item.notes || '—'}</td>
           </tr>
         `;
@@ -858,12 +864,6 @@
         return `
           <tr data-id="${item.id}">
             <td data-label="Date"><input class="edit-input" data-field="date" type="date" value="${item.date}" /></td>
-            <td data-label="Status">
-              <select class="edit-select" data-field="status">
-                <option value="open" ${item.status === 'open' ? 'selected' : ''}>open</option>
-                <option value="done" ${item.status === 'done' ? 'selected' : ''}>done</option>
-              </select>
-            </td>
             <td data-label="Oppas">${renderOppasSelect(item)}</td>
             <td data-label="Notes"><input class="edit-input" data-field="notes" type="text" value="${item.notes}" /></td>
             <td data-label="Acties"><button class="delete-btn" data-action="delete">Verwijderen</button></td>
@@ -881,7 +881,7 @@
               }
             }
 
-            const statusOk = statusFilter.value === 'all' || item.status === statusFilter.value;
+            const statusOk = statusFilter.value === 'all' || deriveStatus(item) === statusFilter.value;
             const sitterOk = sitterFilter.value === 'all' || item.sitter === sitterFilter.value;
             return statusOk && sitterOk;
           })
@@ -900,6 +900,7 @@
         editModeBtn.classList.toggle('edit-mode-active', isEditMode);
         addRowBtn.classList.toggle('hidden', !isEditMode);
         actionsHead.classList.toggle('hidden', !isEditMode);
+        statusHead.classList.toggle('hidden', isEditMode);
         modeHint.textContent = isEditMode
           ? 'Aanpassmodus staat aan (direct bewerken mogelijk).'
           : 'Aanpassmodus staat uit (alleen lezen).';
@@ -918,7 +919,6 @@
         data.push({
           id: nextId,
           date: new Date().toISOString().slice(0, 10),
-          status: 'open',
           sitter: '',
           notes: ''
         });
@@ -1016,7 +1016,7 @@
         statusFilter.value = 'all';
         sitterFilter.value = 'all';
         openOnlyMode = false;
-        openOnlyBtn.textContent = 'Open only';
+        openOnlyBtn.textContent = 'Opas only';
         showPastDates = false;
         togglePastBtn.textContent = 'Show past dates';
         renderRows();
