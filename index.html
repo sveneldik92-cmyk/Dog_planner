@@ -171,6 +171,60 @@
         cursor: not-allowed;
       }
 
+      .signin-success {
+        background: #15643c;
+      }
+
+      .dialog-backdrop {
+        position: fixed;
+        inset: 0;
+        background: rgba(20, 28, 42, 0.48);
+        display: none;
+        align-items: center;
+        justify-content: center;
+        padding: 1rem;
+        z-index: 40;
+      }
+
+      .dialog-backdrop.open {
+        display: flex;
+      }
+
+      .dialog {
+        width: min(700px, 100%);
+        background: #fff;
+        border: 1px solid var(--line);
+        border-radius: 12px;
+        box-shadow: 0 15px 40px rgba(16, 24, 40, 0.2);
+        padding: 1rem;
+      }
+
+      .dialog h3 {
+        margin: 0 0 .5rem 0;
+      }
+
+      .dialog p {
+        margin: 0 0 .65rem 0;
+      }
+
+      .dialog pre {
+        background: #f6f8fb;
+        border: 1px solid var(--line);
+        border-radius: 10px;
+        padding: .65rem;
+        margin: 0;
+        max-height: 260px;
+        overflow: auto;
+        white-space: pre-wrap;
+        word-break: break-word;
+      }
+
+      .dialog-actions {
+        margin-top: .8rem;
+        display: flex;
+        justify-content: flex-end;
+      }
+
       @media (max-width: 768px) {
         .wrapper {
           margin: .75rem auto;
@@ -365,6 +419,17 @@
       <button id="sync" disabled>Sync to Calendar</button>
     </div>
 
+    <div id="feedbackBackdrop" class="dialog-backdrop" role="dialog" aria-modal="true" aria-labelledby="feedbackTitle">
+      <div class="dialog">
+        <h3 id="feedbackTitle">Status</h3>
+        <p id="feedbackMessage"></p>
+        <pre id="feedbackDetails" class="hidden"></pre>
+        <div class="dialog-actions">
+          <button id="feedbackClose" class="ghost-btn">Close</button>
+        </div>
+      </div>
+    </div>
+
     <script>
       const CLIENT_ID = '189015137041-otdlrtmqa7v9c6o7qurfc147hql7nfr0.apps.googleusercontent.com';
       const CALENDAR_ID = 'chipplanner92@gmail.com';
@@ -373,6 +438,8 @@
       let tokenClient;
       let gapiReady = false;
       let gisReady = false;
+      let isAuthenticated = false;
+      let syncInProgress = false;
 
       const data = [
         { id: 181, date: 'Thu 26 Feb', status: 'done', sitter: 'Lars', notes: '' },
@@ -439,12 +506,45 @@
       const modeHint = document.getElementById('modeHint');
       const signinBtn = document.getElementById('signin');
       const syncBtn = document.getElementById('sync');
+      const feedbackBackdrop = document.getElementById('feedbackBackdrop');
+      const feedbackTitle = document.getElementById('feedbackTitle');
+      const feedbackMessage = document.getElementById('feedbackMessage');
+      const feedbackDetails = document.getElementById('feedbackDetails');
+      const feedbackClose = document.getElementById('feedbackClose');
 
       let isEditMode = false;
+
+      function showFeedbackDialog({ title, message, details = '' }) {
+        feedbackTitle.textContent = title;
+        feedbackMessage.textContent = message;
+        if (details) {
+          feedbackDetails.textContent = details;
+          feedbackDetails.classList.remove('hidden');
+        } else {
+          feedbackDetails.classList.add('hidden');
+          feedbackDetails.textContent = '';
+        }
+        feedbackBackdrop.classList.add('open');
+      }
+
+      function closeFeedbackDialog() {
+        feedbackBackdrop.classList.remove('open');
+      }
+
+      function updateSigninButton() {
+        if (isAuthenticated) {
+          signinBtn.textContent = 'Signed in ✓';
+          signinBtn.classList.add('signin-success');
+        } else {
+          signinBtn.textContent = 'Sign in to Google';
+          signinBtn.classList.remove('signin-success');
+        }
+      }
 
       function maybeEnableSignin() {
         if (gapiReady && gisReady) {
           signinBtn.disabled = false;
+          updateSigninButton();
         }
       }
 
@@ -464,11 +564,24 @@
           scope: SCOPES,
           callback: (resp) => {
             if (resp.error) {
-              window.alert(resp.error);
+              isAuthenticated = false;
+              syncBtn.disabled = true;
+              updateSigninButton();
+              showFeedbackDialog({
+                title: 'Google sign-in failed',
+                message: 'Google did not return an access token, so calendar sync stays disabled.',
+                details: `Error: ${resp.error}\n\nTroubleshooting:\n1) Try sign-in again and choose the same Google account that owns ${CALENDAR_ID}.\n2) Make sure third-party cookies/popups are not blocked for this page.\n3) If needed, refresh and retry sign-in.`
+              });
               return;
             }
             window.gapi.client.setToken(resp);
+            isAuthenticated = true;
+            updateSigninButton();
             syncBtn.disabled = false;
+            showFeedbackDialog({
+              title: 'Sign-in successful',
+              message: 'Google authentication succeeded. You can sync to calendar now.'
+            });
           }
         });
         gisReady = true;
@@ -490,27 +603,69 @@
 
       function handleAuth() {
         if (!tokenClient) return;
+        showFeedbackDialog({
+          title: 'Google sign-in',
+          message: 'Opening Google sign-in. Complete the account and consent steps in the popup.'
+        });
         tokenClient.requestAccessToken();
       }
 
+      function formatApiError(err) {
+        const pieces = [];
+        if (!err) return 'Unknown error';
+        if (err.result?.error?.code) pieces.push(`Code: ${err.result.error.code}`);
+        if (err.result?.error?.message) pieces.push(`Message: ${err.result.error.message}`);
+        if (err.status) pieces.push(`HTTP status: ${err.status}`);
+        if (err.message) pieces.push(`Error: ${err.message}`);
+        if (!pieces.length) {
+          try {
+            pieces.push(JSON.stringify(err, null, 2));
+          } catch (_unused) {
+            pieces.push(String(err));
+          }
+        }
+        return pieces.join('\n');
+      }
+
       async function syncNow() {
+        if (syncInProgress) return;
         const planEvents = buildPlanEvents();
         const rangeStart = new Date();
         const rangeEnd = new Date(rangeStart);
         rangeEnd.setFullYear(rangeEnd.getFullYear() + 1);
+        syncInProgress = true;
+        syncBtn.disabled = true;
+
+        showFeedbackDialog({
+          title: 'Sync in progress',
+          message: `Starting sync for ${planEvents.length} planner events. Please wait...`
+        });
 
         try {
-          await wipeRange(rangeStart, rangeEnd);
-          await insertEvents(planEvents);
-          window.alert(`Synced ${planEvents.length} events.`);
+          const deletedCount = await wipeRange(rangeStart, rangeEnd);
+          const insertedCount = await insertEvents(planEvents);
+          showFeedbackDialog({
+            title: 'Sync completed',
+            message: `Calendar sync succeeded.`,
+            details: `Deleted existing events in range: ${deletedCount}\nInserted events: ${insertedCount}\nCalendar: ${CALENDAR_ID}\nWindow: ${rangeStart.toISOString()} → ${rangeEnd.toISOString()}`
+          });
         } catch (err) {
           console.error(err);
-          window.alert('Sync failed — see console.');
+          const details = `${formatApiError(err)}\n\nTroubleshooting:\n1) Confirm you are signed in with access to ${CALENDAR_ID}.\n2) If the error code is 401/403, click "Sign in to Google" again.\n3) Verify Calendar API is enabled for this Google Cloud OAuth client.\n4) Check whether browser extensions are blocking Google auth or requests.`;
+          showFeedbackDialog({
+            title: 'Sync failed',
+            message: 'Calendar sync failed. See detailed diagnostics below.',
+            details
+          });
+        } finally {
+          syncInProgress = false;
+          syncBtn.disabled = !isAuthenticated;
         }
       }
 
       async function wipeRange(startDate, endDate) {
         let pageToken = null;
+        let deletedCount = 0;
         do {
           const resp = await window.gapi.client.calendar.events.list({
             calendarId: CALENDAR_ID,
@@ -525,10 +680,12 @@
               calendarId: CALENDAR_ID,
               eventId: ev.id
             }));
+            deletedCount += 1;
           });
           await batch.then();
           pageToken = resp.result.nextPageToken;
         } while (pageToken);
+        return deletedCount;
       }
 
       async function insertEvents(events) {
@@ -540,6 +697,7 @@
           }));
         });
         await batch.then();
+        return events.length;
       }
 
       function toDateTimeWithOffset(dateStr, hour, minute) {
@@ -750,6 +908,10 @@
       addRowBtn.addEventListener('click', addNewRow);
       signinBtn.addEventListener('click', handleAuth);
       syncBtn.addEventListener('click', syncNow);
+      feedbackClose.addEventListener('click', closeFeedbackDialog);
+      feedbackBackdrop.addEventListener('click', event => {
+        if (event.target === feedbackBackdrop) closeFeedbackDialog();
+      });
 
       refreshSitterFilterOptions();
       renderRows();
