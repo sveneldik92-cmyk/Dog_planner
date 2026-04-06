@@ -393,6 +393,8 @@
         </label>
 
         <button id="resetBtn" class="ghost-btn">Reset filters</button>
+        <button id="togglePastBtn" class="ghost-btn">Show past dates</button>
+        <button id="openOnlyBtn" class="ghost-btn">Open only</button>
         <button id="editModeBtn">Aanpassmodus uit</button>
         <button id="addRowBtn" class="hidden">Nieuwe regel toevoegen</button>
         <span class="mode-hint" id="modeHint">Aanpassmodus staat uit (alleen lezen).</span>
@@ -487,7 +489,8 @@
         return new Intl.DateTimeFormat('en-GB', {
           weekday: 'short',
           day: 'numeric',
-          month: 'short'
+          month: 'short',
+          year: 'numeric'
         }).format(parsed).replace(',', '');
       }
 
@@ -500,6 +503,8 @@
       const statusFilter = document.getElementById('statusFilter');
       const sitterFilter = document.getElementById('sitterFilter');
       const resetBtn = document.getElementById('resetBtn');
+      const togglePastBtn = document.getElementById('togglePastBtn');
+      const openOnlyBtn = document.getElementById('openOnlyBtn');
       const editModeBtn = document.getElementById('editModeBtn');
       const addRowBtn = document.getElementById('addRowBtn');
       const actionsHead = document.getElementById('actionsHead');
@@ -513,6 +518,19 @@
       const feedbackClose = document.getElementById('feedbackClose');
 
       let isEditMode = false;
+      let showPastDates = false;
+      let openOnlyMode = false;
+
+      function startOfToday() {
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+        return today;
+      }
+
+      function syncOpenOnlyStateWithFilter() {
+        openOnlyMode = statusFilter.value === 'open';
+        openOnlyBtn.textContent = openOnlyMode ? 'Show all statuses' : 'Open only';
+      }
 
       function showFeedbackDialog({ title, message, details = '' }) {
         feedbackTitle.textContent = title;
@@ -824,11 +842,20 @@
       }
 
       function getFilteredData() {
-        return data.filter(item => {
-          const statusOk = statusFilter.value === 'all' || item.status === statusFilter.value;
-          const sitterOk = sitterFilter.value === 'all' || item.sitter === sitterFilter.value;
-          return statusOk && sitterOk;
-        });
+        return data
+          .filter(item => {
+            if (!showPastDates) {
+              const rowDate = new Date(`${item.date}T00:00:00`);
+              if (!Number.isNaN(rowDate.getTime()) && rowDate < startOfToday()) {
+                return false;
+              }
+            }
+
+            const statusOk = statusFilter.value === 'all' || item.status === statusFilter.value;
+            const sitterOk = sitterFilter.value === 'all' || item.sitter === sitterFilter.value;
+            return statusOk && sitterOk;
+          })
+          .sort((a, b) => a.date.localeCompare(b.date));
       }
 
       function renderRows() {
@@ -928,8 +955,24 @@
       resetBtn.addEventListener('click', () => {
         statusFilter.value = 'all';
         sitterFilter.value = 'all';
+        openOnlyMode = false;
+        openOnlyBtn.textContent = 'Open only';
+        showPastDates = false;
+        togglePastBtn.textContent = 'Show past dates';
         renderRows();
       });
+      togglePastBtn.addEventListener('click', () => {
+        showPastDates = !showPastDates;
+        togglePastBtn.textContent = showPastDates ? 'Hide past dates' : 'Show past dates';
+        renderRows();
+      });
+      openOnlyBtn.addEventListener('click', () => {
+        openOnlyMode = !openOnlyMode;
+        statusFilter.value = openOnlyMode ? 'open' : 'all';
+        syncOpenOnlyStateWithFilter();
+        renderRows();
+      });
+      statusFilter.addEventListener('change', syncOpenOnlyStateWithFilter);
       editModeBtn.addEventListener('click', toggleEditMode);
       addRowBtn.addEventListener('click', addNewRow);
       signinBtn.addEventListener('click', handleAuth);
@@ -940,6 +983,7 @@
       });
 
       refreshSitterFilterOptions();
+      syncOpenOnlyStateWithFilter();
       renderRows();
       initializeGoogleLibraries();
     </script>
