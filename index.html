@@ -4,6 +4,8 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Oppas Planner</title>
+    <script src="https://accounts.google.com/gsi/client" async defer></script>
+    <script src="https://apis.google.com/js/api.js" async defer></script>
     <style>
       :root {
         color-scheme: light;
@@ -155,6 +157,20 @@
         display: none;
       }
 
+      .sync-actions {
+        position: fixed;
+        right: 1rem;
+        bottom: 1rem;
+        display: flex;
+        gap: .5rem;
+        z-index: 20;
+      }
+
+      .sync-actions button[disabled] {
+        opacity: .55;
+        cursor: not-allowed;
+      }
+
       @media (max-width: 768px) {
         .wrapper {
           margin: .75rem auto;
@@ -262,6 +278,13 @@
           text-align: right;
           max-width: 66%;
         }
+
+        .sync-actions {
+          right: .65rem;
+          bottom: .65rem;
+          flex-direction: column;
+          width: min(68vw, 250px);
+        }
       }
 
       @media (max-width: 560px) {
@@ -337,7 +360,20 @@
       </div>
     </div>
 
+    <div class="sync-actions">
+      <button id="signin" disabled>Sign in to Google</button>
+      <button id="sync" disabled>Sync to Calendar</button>
+    </div>
+
     <script>
+      const CLIENT_ID = '189015137041-otdlrtmqa7v9c6o7qurfc147hql7nfr0.apps.googleusercontent.com';
+      const CALENDAR_ID = 'chipplanner92@gmail.com';
+      const SCOPES = 'https://www.googleapis.com/auth/calendar';
+
+      let tokenClient;
+      let gapiReady = false;
+      let gisReady = false;
+
       const data = [
         { id: 181, date: 'Thu 26 Feb', status: 'done', sitter: 'Lars', notes: '' },
         { id: 185, date: 'Mon 2 Mar', status: 'done', sitter: 'Nina', notes: '' },
@@ -401,8 +437,154 @@
       const addRowBtn = document.getElementById('addRowBtn');
       const actionsHead = document.getElementById('actionsHead');
       const modeHint = document.getElementById('modeHint');
+      const signinBtn = document.getElementById('signin');
+      const syncBtn = document.getElementById('sync');
 
       let isEditMode = false;
+
+      function maybeEnableSignin() {
+        if (gapiReady && gisReady) {
+          signinBtn.disabled = false;
+        }
+      }
+
+      function gapiInit() {
+        if (!window.gapi) return;
+        window.gapi.load('client', async () => {
+          await window.gapi.client.init({});
+          gapiReady = true;
+          maybeEnableSignin();
+        });
+      }
+
+      function gisInit() {
+        if (!window.google?.accounts?.oauth2) return;
+        tokenClient = window.google.accounts.oauth2.initTokenClient({
+          client_id: CLIENT_ID,
+          scope: SCOPES,
+          callback: (resp) => {
+            if (resp.error) {
+              window.alert(resp.error);
+              return;
+            }
+            window.gapi.client.setToken(resp);
+            syncBtn.disabled = false;
+          }
+        });
+        gisReady = true;
+        maybeEnableSignin();
+      }
+
+      function initializeGoogleLibraries() {
+        gapiInit();
+        gisInit();
+
+        const retryTimer = window.setInterval(() => {
+          if (!gapiReady) gapiInit();
+          if (!gisReady) gisInit();
+          if (gapiReady && gisReady) window.clearInterval(retryTimer);
+        }, 350);
+
+        window.setTimeout(() => window.clearInterval(retryTimer), 10000);
+      }
+
+      function handleAuth() {
+        if (!tokenClient) return;
+        tokenClient.requestAccessToken();
+      }
+
+      async function syncNow() {
+        const planEvents = buildPlanEvents();
+        const rangeStart = new Date();
+        const rangeEnd = new Date(rangeStart);
+        rangeEnd.setFullYear(rangeEnd.getFullYear() + 1);
+
+        try {
+          await wipeRange(rangeStart, rangeEnd);
+          await insertEvents(planEvents);
+          window.alert(`Synced ${planEvents.length} events.`);
+        } catch (err) {
+          console.error(err);
+          window.alert('Sync failed — see console.');
+        }
+      }
+
+      async function wipeRange(startDate, endDate) {
+        let pageToken = null;
+        do {
+          const resp = await window.gapi.client.calendar.events.list({
+            calendarId: CALENDAR_ID,
+            timeMin: startDate.toISOString(),
+            timeMax: endDate.toISOString(),
+            maxResults: 2500,
+            pageToken
+          });
+          const batch = window.gapi.client.newBatch();
+          resp.result.items.forEach(ev => {
+            batch.add(window.gapi.client.calendar.events.delete({
+              calendarId: CALENDAR_ID,
+              eventId: ev.id
+            }));
+          });
+          await batch.then();
+          pageToken = resp.result.nextPageToken;
+        } while (pageToken);
+      }
+
+      async function insertEvents(events) {
+        const batch = window.gapi.client.newBatch();
+        events.forEach(ev => {
+          batch.add(window.gapi.client.calendar.events.insert({
+            calendarId: CALENDAR_ID,
+            resource: ev
+          }));
+        });
+        await batch.then();
+      }
+
+      function toDateTimeWithOffset(dateStr, hour, minute) {
+        const local = new Date(`${dateStr}T${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}:00`);
+        if (Number.isNaN(local.getTime())) return '';
+
+        const year = local.getFullYear();
+        const month = String(local.getMonth() + 1).padStart(2, '0');
+        const day = String(local.getDate()).padStart(2, '0');
+        const hh = String(local.getHours()).padStart(2, '0');
+        const mm = String(local.getMinutes()).padStart(2, '0');
+        const ss = String(local.getSeconds()).padStart(2, '0');
+        const offsetMinutes = -local.getTimezoneOffset();
+        const sign = offsetMinutes >= 0 ? '+' : '-';
+        const absOffset = Math.abs(offsetMinutes);
+        const offH = String(Math.floor(absOffset / 60)).padStart(2, '0');
+        const offM = String(absOffset % 60).padStart(2, '0');
+
+        return `${year}-${month}-${day}T${hh}:${mm}:${ss}${sign}${offH}:${offM}`;
+      }
+
+      function buildPlanEvents() {
+        return [...tbody.querySelectorAll('tr')]
+          .map(row => {
+            const rowId = Number(row.dataset.id);
+            const item = data.find(entry => entry.id === rowId);
+            if (!item || !item.date) return null;
+
+            const startDateTime = toDateTimeWithOffset(item.date, 9, 0);
+            const endDateTime = toDateTimeWithOffset(item.date, 11, 0);
+            if (!startDateTime || !endDateTime) return null;
+
+            const sitterText = item.sitter || 'Unassigned';
+            const statusText = item.status === 'done' ? 'done' : 'open';
+            const notesText = item.notes ? `Notes: ${item.notes}` : 'Notes: —';
+
+            return {
+              summary: `Oppas planner: ${sitterText}`,
+              start: { dateTime: startDateTime },
+              end: { dateTime: endDateTime },
+              description: `Status: ${statusText}\n${notesText}`
+            };
+          })
+          .filter(Boolean);
+      }
 
       function refreshSitterFilterOptions() {
         const current = sitterFilter.value;
@@ -431,7 +613,7 @@
 
       function renderDisplayRow(item) {
         return `
-          <tr>
+          <tr data-id="${item.id}">
             <td data-label="Date">${formatDateForDisplay(item.date)}</td>
             <td data-label="Status"><span class="status ${item.status}">${item.status === 'done' ? '✅ geregeld' : '❌ open'}</span></td>
             <td data-label="Oppas">${item.sitter || '—'}</td>
@@ -566,9 +748,12 @@
       });
       editModeBtn.addEventListener('click', toggleEditMode);
       addRowBtn.addEventListener('click', addNewRow);
+      signinBtn.addEventListener('click', handleAuth);
+      syncBtn.addEventListener('click', syncNow);
 
       refreshSitterFilterOptions();
       renderRows();
+      initializeGoogleLibraries();
     </script>
   </body>
 </html>
