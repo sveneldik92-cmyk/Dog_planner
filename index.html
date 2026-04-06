@@ -817,18 +817,16 @@
         return [...new Set(data.map(item => item.sitter).filter(Boolean))].sort((a, b) => a.localeCompare(b));
       }
 
-      function renderSitterSelect(item) {
+      function renderSitterInput(item) {
         const options = getSitterOptions();
-        const optionTags = options
-          .map(option => `<option value="${option}" ${item.sitter === option ? 'selected' : ''}>${option}</option>`)
-          .join('');
+        const optionTags = options.map(option => `<option value="${option}"></option>`).join('');
+        const listId = `sitter-options-${item.id}`;
 
         return `
-          <select class="edit-select" data-field="sitter">
-            <option value="" ${!item.sitter ? 'selected' : ''}>—</option>
+          <input class="edit-input" data-field="sitter" type="text" list="${listId}" value="${item.sitter}" placeholder="Kies of typ nieuwe oppas" />
+          <datalist id="${listId}">
             ${optionTags}
-            <option value="__add_new__">+ Add new…</option>
-          </select>
+          </datalist>
         `;
       }
 
@@ -842,7 +840,7 @@
                 <option value="done" ${item.status === 'done' ? 'selected' : ''}>done</option>
               </select>
             </td>
-            <td data-label="Oppas">${renderSitterSelect(item)}</td>
+            <td data-label="Oppas">${renderSitterInput(item)}</td>
             <td data-label="Notes"><input class="edit-input" data-field="notes" type="text" value="${item.notes}" /></td>
             <td data-label="Acties"><button class="delete-btn" data-action="delete">Verwijderen</button></td>
           </tr>
@@ -931,36 +929,6 @@
           refreshSitterFilterOptions();
         }
 
-        renderStats(getFilteredData());
-      });
-
-      tbody.addEventListener('change', event => {
-        if (!isEditMode) return;
-
-        const target = event.target;
-        if (target.dataset.field !== 'sitter') return;
-
-        const row = target.closest('tr');
-        if (!row) return;
-        const id = Number(row.dataset.id);
-        if (Number.isNaN(id)) return;
-
-        if (target.value === '__add_new__') {
-          const customSitter = window.prompt('Type een nieuwe oppasnaam:');
-          if (!customSitter || !customSitter.trim()) {
-            const item = data.find(entry => entry.id === id);
-            target.value = item?.sitter || '';
-            return;
-          }
-
-          updateItem(id, 'sitter', customSitter.trim());
-          refreshSitterFilterOptions();
-          renderRows();
-          return;
-        }
-
-        updateItem(id, 'sitter', target.value);
-        refreshSitterFilterOptions();
         renderStats(getFilteredData());
       });
 
