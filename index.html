@@ -162,6 +162,8 @@
         right: 1rem;
         bottom: 1rem;
         display: flex;
+        flex-wrap: wrap;
+        justify-content: flex-end;
         gap: .5rem;
         z-index: 20;
       }
@@ -417,6 +419,9 @@
     </div>
 
     <div class="sync-actions">
+      <button id="githubSetup" class="ghost-btn">Connect GitHub</button>
+      <button id="githubPull" class="ghost-btn" disabled>Pull from GitHub</button>
+      <button id="githubPush" class="ghost-btn" disabled>Push to GitHub</button>
       <button id="signin" disabled>Sign in to Google</button>
       <button id="sync" disabled>Sync to Calendar</button>
     </div>
@@ -443,7 +448,7 @@
       let isAuthenticated = false;
       let syncInProgress = false;
 
-      const data = [
+      const DEFAULT_DATA = [
         { id: 1, date: '2026-04-07', sitter: 'Wilma', notes: '' },
         { id: 2, date: '2026-04-09', sitter: 'K&P', notes: '' },
         { id: 3, date: '2026-04-10', sitter: 'Sven', notes: '' },
@@ -475,6 +480,10 @@
       const OPPAS_OPTIONS = ['K&P', 'Maaike', 'Sven', 'Wilma'];
       const currentYear = new Date().getFullYear();
 
+      const LOCAL_DATA_STORAGE_KEY = 'oppas-planner:data:v1';
+      const GITHUB_SYNC_STORAGE_KEY = 'oppas-planner:github:v1';
+      const GITHUB_GIST_FILENAME = 'dog-planner-events.json';
+
       function normalizeDateValue(value) {
         if (!value) return '';
         if (/^\d{4}-\d{2}-\d{2}$/.test(value)) return value;
@@ -502,9 +511,55 @@
         }).format(parsed).replace(',', '');
       }
 
-      data.forEach(item => {
-        item.date = normalizeDateValue(item.date);
-      });
+      function sanitizeRows(rows) {
+        if (!Array.isArray(rows)) return [];
+        return rows
+          .filter(item => item && typeof item === 'object')
+          .map(item => ({
+            id: Number(item.id) || Date.now() + Math.floor(Math.random() * 1000),
+            date: normalizeDateValue(item.date),
+            sitter: typeof item.sitter === 'string' ? item.sitter : '',
+            notes: typeof item.notes === 'string' ? item.notes : ''
+          }));
+      }
+
+      function loadLocalRows() {
+        const fallback = sanitizeRows(DEFAULT_DATA);
+        try {
+          const raw = localStorage.getItem(LOCAL_DATA_STORAGE_KEY);
+          if (!raw) return fallback;
+          const parsed = JSON.parse(raw);
+          const rows = sanitizeRows(parsed?.events);
+          return rows.length ? rows : fallback;
+        } catch (_err) {
+          return fallback;
+        }
+      }
+
+      function persistLocalRows() {
+        localStorage.setItem(LOCAL_DATA_STORAGE_KEY, JSON.stringify({
+          updatedAt: new Date().toISOString(),
+          events: data
+        }));
+      }
+
+      function loadGitHubSettings() {
+        try {
+          const raw = localStorage.getItem(GITHUB_SYNC_STORAGE_KEY);
+          if (!raw) return null;
+          const parsed = JSON.parse(raw);
+          if (!parsed?.token || !parsed?.gistId) return null;
+          return { token: parsed.token, gistId: parsed.gistId };
+        } catch (_err) {
+          return null;
+        }
+      }
+
+      function saveGitHubSettings(settings) {
+        localStorage.setItem(GITHUB_SYNC_STORAGE_KEY, JSON.stringify(settings));
+      }
+
+      let data = loadLocalRows();
 
       const tbody = document.getElementById('rows');
       const stats = document.getElementById('stats');
@@ -518,6 +573,9 @@
       const actionsHead = document.getElementById('actionsHead');
       const statusHead = document.getElementById('statusHead');
       const modeHint = document.getElementById('modeHint');
+      const githubSetupBtn = document.getElementById('githubSetup');
+      const githubPullBtn = document.getElementById('githubPull');
+      const githubPushBtn = document.getElementById('githubPush');
       const signinBtn = document.getElementById('signin');
       const syncBtn = document.getElementById('sync');
       const feedbackBackdrop = document.getElementById('feedbackBackdrop');
@@ -529,6 +587,7 @@
       let isEditMode = false;
       let showPastDates = false;
       let openOnlyMode = false;
+      let githubSync = loadGitHubSettings();
 
       function deriveStatus(item) {
         return item.date && item.sitter?.trim() ? 'done' : 'open';
@@ -649,6 +708,141 @@
           message: 'Opening Google sign-in. Complete the account and consent steps in the popup.'
         });
         tokenClient.requestAccessToken();
+      }
+
+      function updateGitHubButtons() {
+        const connected = Boolean(githubSync?.token && githubSync?.gistId);
+        githubPullBtn.disabled = !connected;
+        githubPushBtn.disabled = !connected;
+        githubSetupBtn.textContent = connected ? 'GitHub connected ✓' : 'Connect GitHub';
+      }
+
+      async function githubRequest(path, { method = 'GET', body } = {}) {
+        if (!githubSync?.token) throw new Error('GitHub is not connected yet.');
+        const resp = await fetch(`https://api.github.com${path}`, {
+          method,
+          headers: {
+            Authorization: `Bearer ${githubSync.token}`,
+            Accept: 'application/vnd.github+json',
+            'Content-Type': 'application/json'
+          },
+          body: body ? JSON.stringify(body) : undefined
+        });
+
+        const payload = await resp.json().catch(() => ({}));
+        if (!resp.ok) {
+          throw new Error(payload?.message || `GitHub API failed (${resp.status})`);
+        }
+
+        return payload;
+      }
+
+      async function setupGitHubSync() {
+        const existingToken = githubSync?.token || '';
+        const token = window.prompt('Paste a GitHub Personal Access Token (classic or fine-grained) with gist read/write access:', existingToken);
+        if (!token || !token.trim()) return;
+
+        const gistHint = githubSync?.gistId || '';
+        const gistInput = window.prompt('Optional: paste an existing gist ID to share this planner. Leave empty to create a new gist.', gistHint);
+        const trimmedToken = token.trim();
+        const trimmedGistId = gistInput?.trim();
+
+        try {
+          let gistId = trimmedGistId;
+          if (!gistId) {
+            const created = await githubRequest('/gists', {
+              method: 'POST',
+              body: {
+                description: 'Dog planner shared events',
+                public: false,
+                files: {
+                  [GITHUB_GIST_FILENAME]: {
+                    content: JSON.stringify({ updatedAt: new Date().toISOString(), events: data }, null, 2)
+                  }
+                }
+              }
+            });
+            gistId = created.id;
+          }
+
+          githubSync = { token: trimmedToken, gistId };
+          saveGitHubSettings(githubSync);
+          updateGitHubButtons();
+          showFeedbackDialog({
+            title: 'GitHub connected',
+            message: 'GitHub sync is ready.',
+            details: `Gist ID: ${gistId}
+Share this gist ID + token with another device to sync the same planner.`
+          });
+        } catch (err) {
+          showFeedbackDialog({
+            title: 'GitHub setup failed',
+            message: 'Could not connect to GitHub.',
+            details: String(err?.message || err)
+          });
+        }
+      }
+
+      async function pullFromGitHub() {
+        if (!githubSync?.gistId) return;
+        try {
+          const gist = await githubRequest(`/gists/${githubSync.gistId}`);
+          const plannerFile = gist?.files?.[GITHUB_GIST_FILENAME];
+          if (!plannerFile?.content) {
+            throw new Error(`File ${GITHUB_GIST_FILENAME} was not found in this gist.`);
+          }
+
+          const parsed = JSON.parse(plannerFile.content);
+          const rows = sanitizeRows(parsed?.events);
+          if (!rows.length) {
+            throw new Error('GitHub file is valid JSON but contains no planner rows.');
+          }
+
+          data = rows;
+          persistLocalRows();
+          refreshSitterFilterOptions();
+          renderRows();
+          showFeedbackDialog({
+            title: 'Pulled from GitHub',
+            message: `Loaded ${rows.length} events from shared GitHub storage.`
+          });
+        } catch (err) {
+          showFeedbackDialog({
+            title: 'GitHub pull failed',
+            message: 'Could not download shared events.',
+            details: String(err?.message || err)
+          });
+        }
+      }
+
+      async function pushToGitHub() {
+        if (!githubSync?.gistId) return;
+        try {
+          await githubRequest(`/gists/${githubSync.gistId}`, {
+            method: 'PATCH',
+            body: {
+              files: {
+                [GITHUB_GIST_FILENAME]: {
+                  content: JSON.stringify({
+                    updatedAt: new Date().toISOString(),
+                    events: data
+                  }, null, 2)
+                }
+              }
+            }
+          });
+
+          showFeedbackDialog({
+            title: 'Pushed to GitHub',
+            message: `Uploaded ${data.length} events so other devices can pull the same list.`
+          });
+        } catch (err) {
+          showFeedbackDialog({
+            title: 'GitHub push failed',
+            message: 'Could not upload shared events.',
+            details: String(err?.message || err)
+          });
+        }
       }
 
       function formatApiError(err) {
@@ -912,6 +1106,7 @@
         if (!item) return;
 
         item[field] = value;
+        persistLocalRows();
       }
 
       function addNewRow() {
@@ -924,6 +1119,7 @@
         });
         refreshSitterFilterOptions();
         renderRows();
+        persistLocalRows();
       }
 
       function deleteRow(id) {
@@ -932,6 +1128,7 @@
         data.splice(index, 1);
         refreshSitterFilterOptions();
         renderRows();
+        persistLocalRows();
       }
 
       function confirmDeleteRow(id) {
@@ -987,6 +1184,7 @@
           updateItem(id, 'sitter', customOppas.trim());
           refreshSitterFilterOptions();
           renderRows();
+          persistLocalRows();
           return;
         }
 
@@ -1035,6 +1233,9 @@
       statusFilter.addEventListener('change', syncOpenOnlyStateWithFilter);
       editModeBtn.addEventListener('click', toggleEditMode);
       addRowBtn.addEventListener('click', addNewRow);
+      githubSetupBtn.addEventListener('click', setupGitHubSync);
+      githubPullBtn.addEventListener('click', pullFromGitHub);
+      githubPushBtn.addEventListener('click', pushToGitHub);
       signinBtn.addEventListener('click', handleAuth);
       syncBtn.addEventListener('click', syncNow);
       feedbackClose.addEventListener('click', closeFeedbackDialog);
@@ -1045,6 +1246,7 @@
       refreshSitterFilterOptions();
       syncOpenOnlyStateWithFilter();
       renderRows();
+      updateGitHubButtons();
       initializeGoogleLibraries();
     </script>
   </body>
