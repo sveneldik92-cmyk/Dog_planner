@@ -551,7 +551,17 @@
       function gapiInit() {
         if (!window.gapi) return;
         window.gapi.load('client', async () => {
-          await window.gapi.client.init({});
+          await window.gapi.client.init({
+            // Load the Calendar discovery document so gapi.client.calendar is defined
+            discoveryDocs: [
+              'https://www.googleapis.com/discovery/v1/apis/calendar/v3/rest'
+            ]
+            // No apiKey needed – OAuth supplies the credential
+          });
+
+          // Extra safety-net: be sure Calendar service is loaded
+          await window.gapi.client.load('calendar', 'v3');
+
           gapiReady = true;
           maybeEnableSignin();
         });
