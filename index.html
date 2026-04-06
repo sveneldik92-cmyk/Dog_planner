@@ -736,23 +736,11 @@
         });
       }
 
-      function toDateTimeWithOffset(dateStr, hour, minute) {
-        const local = new Date(`${dateStr}T${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}:00`);
-        if (Number.isNaN(local.getTime())) return '';
-
-        const year = local.getFullYear();
-        const month = String(local.getMonth() + 1).padStart(2, '0');
-        const day = String(local.getDate()).padStart(2, '0');
-        const hh = String(local.getHours()).padStart(2, '0');
-        const mm = String(local.getMinutes()).padStart(2, '0');
-        const ss = String(local.getSeconds()).padStart(2, '0');
-        const offsetMinutes = -local.getTimezoneOffset();
-        const sign = offsetMinutes >= 0 ? '+' : '-';
-        const absOffset = Math.abs(offsetMinutes);
-        const offH = String(Math.floor(absOffset / 60)).padStart(2, '0');
-        const offM = String(absOffset % 60).padStart(2, '0');
-
-        return `${year}-${month}-${day}T${hh}:${mm}:${ss}${sign}${offH}:${offM}`;
+      function addOneDay(dateStr) {
+        const parsed = new Date(`${dateStr}T00:00:00`);
+        if (Number.isNaN(parsed.getTime())) return '';
+        parsed.setDate(parsed.getDate() + 1);
+        return parsed.toISOString().slice(0, 10);
       }
 
       function buildPlanEvents() {
@@ -762,18 +750,20 @@
             const item = data.find(entry => entry.id === rowId);
             if (!item || !item.date) return null;
 
-            const startDateTime = toDateTimeWithOffset(item.date, 9, 0);
-            const endDateTime = toDateTimeWithOffset(item.date, 11, 0);
-            if (!startDateTime || !endDateTime) return null;
+            const endDate = addOneDay(item.date);
+            if (!endDate) return null;
 
             const sitterText = item.sitter || 'Unassigned';
+            const summary = item.sitter
+              ? `Chip opas: ${sitterText}`
+              : 'Problem chip: Unassigned';
             const statusText = item.status === 'done' ? 'done' : 'open';
             const notesText = item.notes ? `Notes: ${item.notes}` : 'Notes: —';
 
             return {
-              summary: `Oppas planner: ${sitterText}`,
-              start: { dateTime: startDateTime },
-              end: { dateTime: endDateTime },
+              summary,
+              start: { date: item.date },
+              end: { date: endDate },
               description: `Status: ${statusText}\n${notesText}`
             };
           })
