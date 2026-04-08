@@ -980,7 +980,7 @@ Share this gist ID + token with another device to sync the same planner.`
 
             const sitterText = item.sitter || 'Unassigned';
             const summary = item.sitter
-              ? `Chip opas: ${sitterText}`
+              ? `${sitterText}, Chip, oppas`
               : 'Problem chip: Unassigned';
             const statusText = deriveStatus(item) === 'done' ? 'geregeld' : 'opas';
             const notesText = item.notes ? `Notes: ${item.notes}` : 'Notes: —';
