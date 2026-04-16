@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="en">
+<html lang="nl">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
@@ -9,14 +9,20 @@
     <style>
       :root {
         color-scheme: light;
-        --bg: #f6f8fb;
+        --bg: #f4f6fb;
         --card: #ffffff;
-        --line: #d8dee8;
-        --accent: #0057ff;
-        --ok: #dff5e5;
-        --open: #fde7e7;
-        --text: #1f2a37;
-        --muted: #5b6472;
+        --card-soft: #f9fbff;
+        --line: #d8dfeb;
+        --line-strong: #c6cfde;
+        --accent: #2058d6;
+        --accent-soft: #e8efff;
+        --ok-bg: #e7f7ed;
+        --ok-text: #17673c;
+        --open-bg: #fff0f0;
+        --open-text: #9c2c2c;
+        --text: #172233;
+        --muted: #5c6778;
+        --shadow-sm: 0 2px 10px rgba(13, 25, 45, 0.05);
       }
 
       * { box-sizing: border-box; }
@@ -26,155 +32,253 @@
         font-family: Inter, system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
         background: var(--bg);
         color: var(--text);
+        line-height: 1.4;
       }
 
       .wrapper {
-        max-width: 1100px;
-        margin: 2rem auto;
-        padding: 0 1rem 2rem;
+        max-width: 1120px;
+        margin: 0 auto;
+        padding: max(1rem, env(safe-area-inset-top)) 1rem max(1.5rem, env(safe-area-inset-bottom));
       }
 
-      .header {
-        display: flex;
-        justify-content: space-between;
-        gap: 1rem;
-        align-items: flex-end;
-        margin-bottom: 1rem;
+      .hero {
+        background: var(--card);
+        border: 1px solid var(--line);
+        border-radius: 18px;
+        padding: 1rem;
+        box-shadow: var(--shadow-sm);
+        margin-bottom: .9rem;
       }
 
-      .title h1 { margin: 0; font-size: 1.8rem; }
-      .title p { margin: .35rem 0 0; color: var(--muted); }
+      .title h1 {
+        margin: 0;
+        font-size: 1.6rem;
+        letter-spacing: -0.02em;
+      }
+
+      .title p {
+        margin: .35rem 0 0;
+        color: var(--muted);
+        font-size: .95rem;
+      }
 
       .stats {
         display: grid;
-        grid-template-columns: repeat(3, minmax(130px, 1fr));
-        gap: .65rem;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: .55rem;
+        margin-top: .9rem;
       }
 
       .stat {
+        background: linear-gradient(180deg, #fff 0%, var(--card-soft) 100%);
+        border: 1px solid var(--line);
+        border-radius: 14px;
+        padding: .7rem .75rem;
+      }
+
+      .stat small {
+        color: var(--muted);
+        display: block;
+        font-size: .75rem;
+        text-transform: uppercase;
+        letter-spacing: .04em;
+      }
+
+      .stat strong {
+        display: block;
+        margin-top: .2rem;
+        font-size: 1.25rem;
+      }
+
+      .card {
         background: var(--card);
         border: 1px solid var(--line);
-        border-radius: 12px;
-        padding: .7rem .8rem;
+        border-radius: 18px;
+        box-shadow: var(--shadow-sm);
       }
-      .stat small { color: var(--muted); display:block; }
-      .stat strong { font-size: 1.15rem; }
+
+      .card-head {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        gap: .8rem;
+        padding: .95rem 1rem .3rem;
+      }
+
+      .card-head h2 {
+        margin: 0;
+        font-size: 1rem;
+      }
+
+      .card-head p {
+        margin: .2rem 0 0;
+        color: var(--muted);
+        font-size: .84rem;
+      }
 
       .controls {
-        display: flex;
-        flex-wrap: wrap;
-        gap: .6rem;
-        background: var(--card);
-        border: 1px solid var(--line);
-        border-radius: 12px;
-        padding: .8rem;
-        margin-bottom: 1rem;
-        align-items: end;
+        display: grid;
+        grid-template-columns: 1fr;
+        gap: .65rem;
+        padding: .85rem 1rem 1rem;
+        margin-bottom: .9rem;
+      }
+
+      .control-grid {
+        display: grid;
+        grid-template-columns: 1fr;
+        gap: .65rem;
       }
 
       label {
         display: flex;
         flex-direction: column;
-        gap: .25rem;
+        gap: .3rem;
+        font-size: .84rem;
+        color: var(--muted);
       }
 
       select, button, input {
         border: 1px solid var(--line);
-        border-radius: 8px;
-        padding: .45rem .6rem;
+        border-radius: 12px;
+        padding: .6rem .72rem;
         background: #fff;
+        color: var(--text);
         font: inherit;
+        min-height: 46px;
       }
 
       button {
         background: var(--accent);
         color: #fff;
-        border: none;
+        border-color: transparent;
         cursor: pointer;
+        font-weight: 600;
+      }
+
+      button:hover { filter: brightness(0.98); }
+      button:focus-visible,
+      select:focus-visible,
+      input:focus-visible {
+        outline: 2px solid #7ea5ff;
+        outline-offset: 2px;
       }
 
       .ghost-btn {
         background: #fff;
         color: var(--text);
-        border: 1px solid var(--line);
+        border: 1px solid var(--line-strong);
+      }
+
+      .secondary-btn {
+        background: var(--accent-soft);
+        color: var(--accent);
+        border: 1px solid #cfddff;
       }
 
       .edit-mode-active {
-        background: #1348bd;
+        background: #143f9e;
       }
 
-      .table-wrap {
-        background: var(--card);
-        border: 1px solid var(--line);
-        border-radius: 12px;
-        overflow: auto;
-      }
-
-      table { width: 100%; border-collapse: collapse; min-width: 700px; }
-
-      th, td {
-        border-bottom: 1px solid var(--line);
-        text-align: left;
-        padding: .65rem .7rem;
-        font-size: .94rem;
-        vertical-align: top;
-      }
-
-      th {
-        font-size: .82rem;
-        color: var(--muted);
-        text-transform: uppercase;
-        letter-spacing: .02em;
-        position: sticky;
-        top: 0;
-        background: #f7f9fc;
-      }
-
-      .status { border-radius: 999px; padding: .2rem .55rem; font-size: .8rem; font-weight: 700; }
-      .status.open { background: var(--open); color: #992a2a; }
-      .status.done { background: var(--ok); color: #15643c; }
-      .notes { color: var(--muted); }
-
-      .edit-input,
-      .edit-select {
-        width: 100%;
-        min-width: 120px;
-      }
-
-      .delete-btn {
-        background: #c53535;
-        color: #fff;
-        padding: .35rem .5rem;
+      .toolbar-row {
+        display: grid;
+        grid-template-columns: 1fr;
+        gap: .55rem;
       }
 
       .mode-hint {
         color: var(--muted);
-        font-size: .85rem;
-        margin-left: .2rem;
+        font-size: .83rem;
       }
 
-      .hidden {
-        display: none;
+      .edit-surface {
+        border-color: #b8c8ee;
+        background: #f5f8ff;
+      }
+
+      .table-wrap {
+        margin-bottom: .9rem;
+        overflow: hidden;
+      }
+
+      table {
+        width: 100%;
+        border-collapse: collapse;
+      }
+
+      thead th {
+        text-align: left;
+        padding: .72rem .9rem;
+        font-size: .76rem;
+        color: var(--muted);
+        text-transform: uppercase;
+        letter-spacing: .05em;
+        background: #f5f8ff;
+        border-bottom: 1px solid var(--line);
+        position: sticky;
+        top: 0;
+        z-index: 1;
+      }
+
+      tbody td {
+        border-bottom: 1px solid #e6ebf3;
+        padding: .78rem .9rem;
+        vertical-align: top;
+      }
+
+      tbody tr:hover {
+        background: #fbfcff;
+      }
+
+      .date-cell {
+        font-weight: 600;
+      }
+
+      .status {
+        display: inline-flex;
+        align-items: center;
+        border-radius: 999px;
+        padding: .28rem .62rem;
+        font-size: .77rem;
+        font-weight: 700;
+      }
+
+      .status.open { background: var(--open-bg); color: var(--open-text); }
+      .status.done { background: var(--ok-bg); color: var(--ok-text); }
+      .notes { color: var(--muted); white-space: pre-wrap; word-break: break-word; }
+
+      .edit-input,
+      .edit-select {
+        width: 100%;
+      }
+
+      .delete-btn {
+        background: #fff;
+        color: #af2d2d;
+        border: 1px solid #efc7c7;
+      }
+
+      .utility {
+        padding: .85rem 1rem 1rem;
       }
 
       .sync-actions {
-        position: fixed;
-        right: 1rem;
-        bottom: 1rem;
-        display: flex;
-        flex-wrap: wrap;
-        justify-content: flex-end;
-        gap: .5rem;
-        z-index: 20;
+        display: grid;
+        grid-template-columns: 1fr;
+        gap: .55rem;
       }
 
       .sync-actions button[disabled] {
-        opacity: .55;
+        opacity: .58;
         cursor: not-allowed;
       }
 
       .signin-success {
-        background: #15643c;
+        background: #17673c;
+      }
+
+      .hidden {
+        display: none;
       }
 
       .dialog-backdrop {
@@ -196,19 +300,13 @@
         width: min(700px, 100%);
         background: #fff;
         border: 1px solid var(--line);
-        border-radius: 12px;
+        border-radius: 14px;
         box-shadow: 0 15px 40px rgba(16, 24, 40, 0.2);
         padding: 1rem;
       }
 
-      .dialog h3 {
-        margin: 0 0 .5rem 0;
-      }
-
-      .dialog p {
-        margin: 0 0 .65rem 0;
-      }
-
+      .dialog h3 { margin: 0 0 .5rem 0; }
+      .dialog p { margin: 0 0 .65rem 0; }
       .dialog pre {
         background: #f6f8fb;
         border: 1px solid var(--line);
@@ -227,53 +325,11 @@
         justify-content: flex-end;
       }
 
-      @media (max-width: 768px) {
-        .wrapper {
-          margin: .75rem auto;
-          padding: 0 .65rem 1rem;
-        }
-
-        .header {
-          flex-direction: column;
-          align-items: stretch;
-        }
-
-        .title h1 {
-          font-size: 1.45rem;
-        }
-
-        .stats {
-          grid-template-columns: repeat(3, minmax(0, 1fr));
-        }
-
-        .controls {
-          display: grid;
-          grid-template-columns: 1fr 1fr;
-          align-items: stretch;
-          gap: .65rem;
-          padding: .75rem;
-        }
-
-        .controls label,
-        .controls button,
-        .mode-hint {
-          width: 100%;
-        }
-
-        select,
-        button,
-        input {
-          min-height: 44px;
-        }
-
-        .mode-hint {
-          grid-column: 1 / -1;
-          margin-left: 0;
-        }
-
+      @media (max-width: 880px) {
         .table-wrap {
           border: none;
           background: transparent;
+          box-shadow: none;
         }
 
         table,
@@ -284,144 +340,180 @@
           width: 100%;
         }
 
-        table {
-          min-width: 0;
-          border-collapse: separate;
-          border-spacing: 0 .55rem;
-        }
-
         thead {
           display: none;
         }
 
-        tr {
+        tbody {
+          display: grid;
+          gap: .7rem;
+        }
+
+        tbody tr {
           background: var(--card);
           border: 1px solid var(--line);
-          border-radius: 12px;
-          padding: .35rem .75rem;
+          border-radius: 14px;
+          padding: .25rem .85rem;
+          box-shadow: var(--shadow-sm);
         }
 
-        td {
-          border-bottom: 1px dashed var(--line);
-          padding: .55rem 0;
+        tbody td {
+          border-bottom: 1px dashed #e3e9f3;
+          padding: .58rem 0;
           display: flex;
-          justify-content: space-between;
-          gap: .75rem;
-          align-items: center;
+          flex-direction: column;
+          gap: .35rem;
+          align-items: flex-start;
         }
 
-        td::before {
+        tbody td::before {
           content: attr(data-label);
-          font-size: .74rem;
+          font-size: .7rem;
           color: var(--muted);
           text-transform: uppercase;
-          letter-spacing: .03em;
-          font-weight: 600;
-          flex-shrink: 0;
+          letter-spacing: .05em;
+          font-weight: 700;
         }
 
-        td:last-child {
-          border-bottom: none;
+        tbody td:last-child {
+          border-bottom: 0;
         }
 
-        .edit-input,
-        .edit-select {
-          min-width: 0;
-          max-width: 66%;
+        .date-cell {
+          font-size: 1.02rem;
+          letter-spacing: -0.01em;
         }
 
         .notes {
-          text-align: right;
-          max-width: 66%;
+          color: #4b5568;
         }
 
-        .sync-actions {
-          right: .65rem;
-          bottom: .65rem;
-          flex-direction: column;
-          width: min(68vw, 250px);
+        .edit-input,
+        .edit-select,
+        .delete-btn {
+          max-width: none;
+          width: 100%;
         }
       }
 
-      @media (max-width: 560px) {
+      @media (min-width: 881px) {
+        .wrapper {
+          padding-top: 1.4rem;
+        }
+
+        .hero {
+          display: grid;
+          grid-template-columns: 1.4fr 1fr;
+          align-items: end;
+          gap: 1rem;
+        }
+
+        .stats {
+          margin-top: 0;
+        }
+
         .controls {
           grid-template-columns: 1fr;
         }
 
-        .stats {
-          grid-template-columns: repeat(3, minmax(0, 1fr));
-          gap: .45rem;
+        .control-grid {
+          grid-template-columns: repeat(2, minmax(160px, 1fr)) repeat(3, auto);
+          align-items: end;
         }
 
-        .stat {
-          padding: .55rem .6rem;
+        .toolbar-row {
+          grid-template-columns: auto auto auto;
+          justify-content: start;
+          align-items: center;
         }
 
-        .stat strong {
-          font-size: 1rem;
-        }
-
-        td {
-          align-items: flex-start;
+        .sync-actions {
+          grid-template-columns: repeat(3, minmax(160px, max-content));
         }
       }
     </style>
   </head>
   <body>
     <div class="wrapper">
-      <div class="header">
+      <section class="hero">
         <div class="title">
           <h1>Oppas Planner</h1>
-          <p>HTML recreation of your Google Sheet planning app.</p>
+          <p>Plan snel komende data, zie direct wat nog open staat en wijs eenvoudig een oppas toe.</p>
         </div>
         <div class="stats" id="stats"></div>
-      </div>
+      </section>
 
-      <div class="controls">
-        <label>
-          Status
-          <select id="statusFilter">
-            <option value="all">All</option>
-            <option value="open">Opas</option>
-            <option value="done">Geregeld</option>
-          </select>
-        </label>
+      <section class="card controls" id="controlsCard">
+        <div class="card-head">
+          <div>
+            <h2>Planner bediening</h2>
+            <p>Filter, schakel bewerken in en beheer je planning.</p>
+          </div>
+        </div>
 
-        <label>
-          Oppas
-          <select id="sitterFilter">
-            <option value="all">All</option>
-          </select>
-        </label>
+        <div class="control-grid">
+          <label>
+            Status
+            <select id="statusFilter">
+              <option value="all">Alle</option>
+              <option value="open">Open</option>
+              <option value="done">Geregeld</option>
+            </select>
+          </label>
 
-        <button id="resetBtn" class="ghost-btn">Reset filters</button>
-        <button id="togglePastBtn" class="ghost-btn">Show past dates</button>
-        <button id="openOnlyBtn" class="ghost-btn">Open only</button>
-        <button id="editModeBtn">Aanpassmodus uit</button>
-        <button id="addRowBtn" class="hidden">Nieuwe regel toevoegen</button>
-        <span class="mode-hint" id="modeHint">Aanpassmodus staat uit (alleen lezen).</span>
-      </div>
+          <label>
+            Oppas
+            <select id="sitterFilter">
+              <option value="all">Alle</option>
+            </select>
+          </label>
 
-      <div class="table-wrap">
+          <button id="openOnlyBtn" class="secondary-btn">Alleen open</button>
+          <button id="editModeBtn">Bewerkmodus uit</button>
+          <button id="addRowBtn" class="hidden">Nieuwe regel</button>
+        </div>
+
+        <div class="toolbar-row">
+          <button id="resetBtn" class="ghost-btn">Filters resetten</button>
+          <button id="togglePastBtn" class="ghost-btn">Verleden tonen</button>
+          <span class="mode-hint" id="modeHint">Bewerkmodus staat uit (alleen lezen).</span>
+        </div>
+      </section>
+
+      <section class="card table-wrap">
+        <div class="card-head">
+          <div>
+            <h2>Planning</h2>
+            <p>Komende datums, status en oppas in één overzicht.</p>
+          </div>
+        </div>
         <table>
           <thead>
             <tr>
-              <th>Date</th>
+              <th>Datum</th>
               <th id="statusHead">Status</th>
               <th>Oppas</th>
-              <th>Notes</th>
+              <th>Notities</th>
               <th id="actionsHead" class="hidden">Acties</th>
             </tr>
           </thead>
           <tbody id="rows"></tbody>
         </table>
-      </div>
-    </div>
+      </section>
 
-    <div class="sync-actions">
-      <button id="signin" disabled>Sign in to Google</button>
-      <button id="pullCalendar" class="ghost-btn" disabled>Pull from Calendar</button>
-      <button id="sync" disabled>Sync to Calendar</button>
+      <section class="card utility">
+        <div class="card-head">
+          <div>
+            <h2>Google Agenda</h2>
+            <p>Inloggen en synchroniseren wanneer nodig.</p>
+          </div>
+        </div>
+        <div class="sync-actions">
+          <button id="signin" disabled>Inloggen bij Google</button>
+          <button id="pullCalendar" class="ghost-btn" disabled>Uit agenda ophalen</button>
+          <button id="sync" disabled>Naar agenda syncen</button>
+        </div>
+      </section>
     </div>
 
     <div id="feedbackBackdrop" class="dialog-backdrop" role="dialog" aria-modal="true" aria-labelledby="feedbackTitle">
@@ -553,6 +645,7 @@
       const actionsHead = document.getElementById('actionsHead');
       const statusHead = document.getElementById('statusHead');
       const modeHint = document.getElementById('modeHint');
+      const controlsCard = document.getElementById('controlsCard');
       const signinBtn = document.getElementById('signin');
       const pullCalendarBtn = document.getElementById('pullCalendar');
       const syncBtn = document.getElementById('sync');
@@ -577,7 +670,7 @@
 
       function syncOpenOnlyStateWithFilter() {
         openOnlyMode = statusFilter.value === 'open';
-        openOnlyBtn.textContent = openOnlyMode ? 'Show all statuses' : 'Opas only';
+        openOnlyBtn.textContent = openOnlyMode ? 'Alle statussen' : 'Alleen open';
       }
 
       function showFeedbackDialog({ title, message, details = '' }) {
@@ -602,7 +695,7 @@
           signinBtn.textContent = 'Signed in ✓';
           signinBtn.classList.add('signin-success');
         } else {
-          signinBtn.textContent = 'Sign in to Google';
+          signinBtn.textContent = 'Inloggen bij Google';
           signinBtn.classList.remove('signin-success');
         }
       }
@@ -926,7 +1019,7 @@
         const current = sitterFilter.value;
         const sitters = getOppasOptions();
 
-        sitterFilter.innerHTML = '<option value="all">All</option>';
+        sitterFilter.innerHTML = '<option value="all">Alle</option>';
         sitters.forEach(name => {
           const opt = document.createElement('option');
           opt.value = name;
@@ -943,7 +1036,7 @@
         stats.innerHTML = `
           <div class="stat"><small>Total</small><strong>${list.length}</strong></div>
           <div class="stat"><small>Geregeld</small><strong>${done}</strong></div>
-          <div class="stat"><small>Opas</small><strong>${open}</strong></div>
+          <div class="stat"><small>Open</small><strong>${open}</strong></div>
         `;
       }
 
@@ -951,10 +1044,10 @@
         const status = deriveStatus(item);
         return `
           <tr data-id="${item.id}">
-            <td data-label="Date">${formatDateForDisplay(item.date)}</td>
-            <td data-label="Status"><span class="status ${status}">${status === 'done' ? '✅ geregeld' : '❌ opas'}</span></td>
+            <td data-label="Datum" class="date-cell">${formatDateForDisplay(item.date)}</td>
+            <td data-label="Status"><span class="status ${status}">${status === 'done' ? '✅ geregeld' : '⚠️ open'}</span></td>
             <td data-label="Oppas">${item.sitter || '—'}</td>
-            <td data-label="Notes" class="notes">${item.notes || '—'}</td>
+            <td data-label="Notities" class="notes">${item.notes || '—'}</td>
           </tr>
         `;
       }
@@ -984,9 +1077,9 @@
       function renderEditRow(item) {
         return `
           <tr data-id="${item.id}">
-            <td data-label="Date"><input class="edit-input" data-field="date" type="date" value="${item.date}" /></td>
+            <td data-label="Datum"><input class="edit-input" data-field="date" type="date" value="${item.date}" /></td>
             <td data-label="Oppas">${renderOppasSelect(item)}</td>
-            <td data-label="Notes"><input class="edit-input" data-field="notes" type="text" value="${item.notes}" /></td>
+            <td data-label="Notities"><input class="edit-input" data-field="notes" type="text" value="${item.notes}" /></td>
             <td data-label="Acties"><button class="delete-btn" data-action="delete">Verwijderen</button></td>
           </tr>
         `;
@@ -1017,14 +1110,15 @@
 
       function toggleEditMode() {
         isEditMode = !isEditMode;
-        editModeBtn.textContent = isEditMode ? 'Aanpassmodus aan' : 'Aanpassmodus uit';
+        editModeBtn.textContent = isEditMode ? 'Bewerkmodus aan' : 'Bewerkmodus uit';
         editModeBtn.classList.toggle('edit-mode-active', isEditMode);
         addRowBtn.classList.toggle('hidden', !isEditMode);
+        controlsCard.classList.toggle('edit-surface', isEditMode);
         actionsHead.classList.toggle('hidden', !isEditMode);
         statusHead.classList.toggle('hidden', isEditMode);
         modeHint.textContent = isEditMode
-          ? 'Aanpassmodus staat aan (direct bewerken mogelijk).'
-          : 'Aanpassmodus staat uit (alleen lezen).';
+          ? 'Bewerkmodus staat aan (direct bewerken mogelijk).'
+          : 'Bewerkmodus staat uit (alleen lezen).';
         renderRows();
       }
 
@@ -1101,7 +1195,7 @@
         if (Number.isNaN(id)) return;
 
         if (target.value === '__add_new__') {
-          const customOppas = window.prompt('Type a new oppas value:');
+          const customOppas = window.prompt('Typ een nieuwe oppasnaam:');
           if (!customOppas || !customOppas.trim()) {
             const item = data.find(entry => entry.id === id);
             target.value = item?.sitter || '';
@@ -1141,14 +1235,14 @@
         statusFilter.value = 'all';
         sitterFilter.value = 'all';
         openOnlyMode = false;
-        openOnlyBtn.textContent = 'Opas only';
+        openOnlyBtn.textContent = 'Alleen open';
         showPastDates = false;
-        togglePastBtn.textContent = 'Show past dates';
+        togglePastBtn.textContent = 'Verleden tonen';
         renderRows();
       });
       togglePastBtn.addEventListener('click', () => {
         showPastDates = !showPastDates;
-        togglePastBtn.textContent = showPastDates ? 'Hide past dates' : 'Show past dates';
+        togglePastBtn.textContent = showPastDates ? 'Verleden verbergen' : 'Verleden tonen';
         renderRows();
       });
       openOnlyBtn.addEventListener('click', () => {
