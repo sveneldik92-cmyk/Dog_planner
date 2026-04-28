@@ -530,6 +530,7 @@
     <script>
       const CLIENT_ID = '189015137041-otdlrtmqa7v9c6o7qurfc147hql7nfr0.apps.googleusercontent.com';
       const CALENDAR_ID = 'chipplanner92@gmail.com';
+      const PLANNER_EVENT_SOURCE = 'dog_planner';
       const SCOPES = 'https://www.googleapis.com/auth/calendar';
 
       let tokenClient;
@@ -898,10 +899,14 @@
         try {
           const deletedCount = await wipeRange(rangeStart, rangeEnd);
           const insertedCount = await insertEvents(planEvents);
+          const verification = await verifyPlannerEventsInRange(rangeStart, rangeEnd, insertedCount);
+          const isVerified = verification.count === insertedCount;
           showFeedbackDialog({
-            title: 'Sync completed',
-            message: `Calendar sync succeeded.`,
-            details: `Deleted existing events in range: ${deletedCount}\nInserted events: ${insertedCount}\nCalendar: ${CALENDAR_ID}\nWindow: ${rangeStart.toISOString()} → ${rangeEnd.toISOString()}`
+            title: isVerified ? 'Sync completed' : 'Sync completed with warning',
+            message: isVerified
+              ? 'Calendar sync succeeded and was verified.'
+              : 'Calendar sync request succeeded, but verification found fewer events than expected.',
+            details: `Deleted existing planner events in range: ${deletedCount}\nInserted planner events: ${insertedCount}\nVerified planner events in calendar: ${verification.count}\nCalendar: ${CALENDAR_ID}\nWindow: ${rangeStart.toISOString()} → ${rangeEnd.toISOString()}\n\nTroubleshooting if events are still missing:\n1) Open Google Calendar settings and confirm ${CALENDAR_ID} is visible (not hidden/unchecked).\n2) In Calendar view, navigate directly to a synced date inside the window above.\n3) Refresh Google Calendar (web/app) because API inserts can take a short moment to appear.\n4) Ensure you are signed into the same Google account used during sync.\n5) Click "Load from Google Calendar" to compare what the API can currently read.\n6) If verification remains lower than expected, sign out/in and sync again.`
           });
         } catch (err) {
           console.error(err);
@@ -927,7 +932,8 @@
             timeMin: startDate.toISOString(),
             timeMax: endDate.toISOString(),
             maxResults: 2500,
-            pageToken
+            pageToken,
+            privateExtendedProperty: `plannerSource=${PLANNER_EVENT_SOURCE}`
           });
           const batch = window.gapi.client.newBatch();
           resp.result.items.forEach(ev => {
@@ -957,6 +963,27 @@
           await executeBatch(batch);
         }
         return events.length;
+      }
+
+      async function verifyPlannerEventsInRange(startDate, endDate, expectedCount) {
+        let pageToken = null;
+        let count = 0;
+        do {
+          const resp = await window.gapi.client.calendar.events.list({
+            calendarId: CALENDAR_ID,
+            timeMin: startDate.toISOString(),
+            timeMax: endDate.toISOString(),
+            maxResults: 2500,
+            pageToken,
+            privateExtendedProperty: `plannerSource=${PLANNER_EVENT_SOURCE}`
+          });
+          count += resp.result.items?.length || 0;
+          pageToken = resp.result.nextPageToken;
+        } while (pageToken);
+        return {
+          count,
+          expected: expectedCount
+        };
       }
 
       function executeBatch(batch) {
@@ -1009,7 +1036,12 @@
               summary,
               start: { date: item.date },
               end: { date: endDate },
-              description: `Status: ${statusText}\n${notesText}`
+              description: `Status: ${statusText}\n${notesText}`,
+              extendedProperties: {
+                private: {
+                  plannerSource: PLANNER_EVENT_SOURCE
+                }
+              }
             };
           })
           .filter(Boolean);
