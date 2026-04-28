@@ -872,10 +872,25 @@
       function formatApiError(err) {
         const pieces = [];
         if (!err) return 'Unknown error';
+
         if (err.result?.error?.code) pieces.push(`Code: ${err.result.error.code}`);
+        if (err.result?.error?.status) pieces.push(`Status: ${err.result.error.status}`);
         if (err.result?.error?.message) pieces.push(`Message: ${err.result.error.message}`);
         if (err.status) pieces.push(`HTTP status: ${err.status}`);
         if (err.message) pieces.push(`Error: ${err.message}`);
+
+        if (err.body) {
+          try {
+            const parsedBody = typeof err.body === 'string' ? JSON.parse(err.body) : err.body;
+            const bodyError = parsedBody?.error || parsedBody;
+            if (bodyError?.code) pieces.push(`Body code: ${bodyError.code}`);
+            if (bodyError?.status) pieces.push(`Body status: ${bodyError.status}`);
+            if (bodyError?.message) pieces.push(`Body message: ${bodyError.message}`);
+          } catch (_unused) {
+            pieces.push(`Body: ${String(err.body)}`);
+          }
+        }
+
         if (!pieces.length) {
           try {
             pieces.push(JSON.stringify(err, null, 2));
@@ -889,6 +904,13 @@
       async function syncNow() {
         if (syncInProgress) return;
         const planEvents = buildPlanEvents();
+        if (!planEvents.length) {
+          showFeedbackDialog({
+            title: 'Nothing to sync',
+            message: 'No valid dated planner rows were found.'
+          });
+          return;
+        }
         const rangeStart = startOfToday();
         const rangeEnd = new Date(rangeStart);
         rangeEnd.setFullYear(rangeEnd.getFullYear() + 1);
@@ -901,19 +923,36 @@
         });
 
         try {
-          const deletedCount = await wipeRange(rangeStart, rangeEnd);
-          const insertedCount = await insertEvents(planEvents);
+          const deleteResult = await wipeRange(rangeStart, rangeEnd);
+          const insertResult = await insertEvents(planEvents);
+          const { insertedCount } = insertResult;
           const verification = await verifyPlannerEventsWithRetries(rangeStart, rangeEnd, insertedCount);
-          const isVerified = verification.count === insertedCount;
+          const isVerified = insertedCount > 0 && verification.count === insertedCount;
           const apiSample = verification.sampleSummaries.length
             ? verification.sampleSummaries.map((entry, index) => `${index + 1}) ${entry}`).join('\n')
             : 'No tagged planner events were returned yet.';
-          showFeedbackDialog({
-            title: isVerified ? 'Sync completed' : 'Sync completed with warning',
-            message: isVerified
+          const insertedSample = insertResult.insertedEvents.length
+            ? insertResult.insertedEvents.slice(0, 10).map((entry, index) => `${index + 1}) ${entry.id} | ${entry.summary} | ${entry.htmlLink || '(no link returned)'}`).join('\n')
+            : 'No inserted event IDs were returned.';
+          const failedInsertSample = insertResult.failedEvents.length
+            ? insertResult.failedEvents.map((entry, index) => `${index + 1}) ${entry.rowDate} | ${entry.summary}\n${entry.error}`).join('\n\n')
+            : 'None';
+          const failedDeleteSample = deleteResult.failedDeletes.length
+            ? deleteResult.failedDeletes.map((entry, index) => `${index + 1}) ${entry.eventId} | ${entry.summary || '(no summary)'}\n${entry.error}`).join('\n\n')
+            : 'None';
+          const title = insertedCount === 0
+            ? 'Sync failed'
+            : (isVerified ? 'Sync completed' : 'Sync completed with warning');
+          const message = insertedCount === 0
+            ? 'Google Calendar did not confirm any inserted planner events.'
+            : (isVerified
               ? 'Calendar sync succeeded and was verified.'
-              : 'Calendar sync request succeeded, but verification found fewer events than expected.',
-            details: `Deleted existing planner events in range: ${deletedCount}\nInserted planner events: ${insertedCount}\nVerified planner events in calendar: ${verification.count}\nVerification attempts used: ${verification.attempts}\nVerification pages scanned (latest attempt): ${verification.pagesScanned}\nCalendar: ${CALENDAR_ID}\nWindow: ${rangeStart.toISOString()} → ${rangeEnd.toISOString()}\n\nSample events currently visible via API:\n${apiSample}\n\nTroubleshooting if events are still missing:\n1) Open Google Calendar settings and confirm ${CALENDAR_ID} is visible (not hidden/unchecked).\n2) In Calendar view, navigate directly to a synced date inside the window above.\n3) Refresh Google Calendar (web/app) because API inserts can take a short moment to appear.\n4) Ensure you are signed into the same Google account used during sync.\n5) Click "Load from Google Calendar" to compare what the API can currently read.\n6) If verification remains lower than expected, sign out/in and sync again.\n7) Check the sample list above: if it stays empty, OAuth may point to a different account or calendar.`
+              : 'Calendar sync finished, but verification does not match inserted results.');
+
+          showFeedbackDialog({
+            title,
+            message,
+            details: `Deleted existing planner events in range: ${deleteResult.deletedCount}\nFailed planner deletes: ${deleteResult.failedDeleteCount}\nInserted planner events: ${insertedCount}\nFailed planner inserts: ${insertResult.failedCount}\nVerified planner events in calendar: ${verification.count}\nVisible matching events without tag: ${verification.fallbackCount}\nVerification attempts used: ${verification.attempts}\nVerification pages scanned (latest attempt): ${verification.pagesScanned}\nCalendar: ${CALENDAR_ID}\nWindow: ${rangeStart.toISOString()} → ${rangeEnd.toISOString()}\n\nInserted event sample (id | summary | htmlLink):\n${insertedSample}\n\nSample tagged events currently visible via API:\n${apiSample}\n\nFallback sample (matching summary without tag filter):\n${verification.fallbackSample.length ? verification.fallbackSample.map((entry, index) => `${index + 1}) ${entry}`).join('\n') : 'No matching events found without tag filter.'}\n\nFailed inserts:\n${failedInsertSample}\n\nFailed deletes:\n${failedDeleteSample}`
           });
         } catch (err) {
           console.error(err);
@@ -933,6 +972,7 @@
       async function wipeRange(startDate, endDate) {
         let pageToken = null;
         let deletedCount = 0;
+        const failedDeletes = [];
         do {
           const resp = await window.gapi.client.calendar.events.list({
             calendarId: CALENDAR_ID,
@@ -942,34 +982,75 @@
             pageToken,
             privateExtendedProperty: `plannerSource=${PLANNER_EVENT_SOURCE}`
           });
-          const batch = window.gapi.client.newBatch();
-          resp.result.items.forEach(ev => {
-            batch.add(window.gapi.client.calendar.events.delete({
-              calendarId: CALENDAR_ID,
-              eventId: ev.id
-            }));
-            deletedCount += 1;
-          });
-          if (resp.result.items.length) {
-            await executeBatch(batch);
+          const items = resp.result.items || [];
+          for (const ev of items) {
+            try {
+              await window.gapi.client.calendar.events.delete({
+                calendarId: CALENDAR_ID,
+                eventId: ev.id
+              });
+              deletedCount += 1;
+            } catch (err) {
+              failedDeletes.push({
+                eventId: ev.id,
+                summary: ev.summary || '',
+                error: formatApiError(err)
+              });
+            }
           }
           pageToken = resp.result.nextPageToken;
         } while (pageToken);
-        return deletedCount;
+
+        return {
+          deletedCount,
+          failedDeleteCount: failedDeletes.length,
+          failedDeletes
+        };
       }
 
       async function insertEvents(events) {
-        const batch = window.gapi.client.newBatch();
-        events.forEach(ev => {
-          batch.add(window.gapi.client.calendar.events.insert({
-            calendarId: CALENDAR_ID,
-            resource: ev
-          }));
-        });
-        if (events.length) {
-          await executeBatch(batch);
+        let insertedCount = 0;
+        const insertedEvents = [];
+        const failedEvents = [];
+
+        for (const ev of events) {
+          const rowDate = ev?.start?.date || 'unknown date';
+          const summary = ev?.summary || '(no summary)';
+          try {
+            const resp = await window.gapi.client.calendar.events.insert({
+              calendarId: CALENDAR_ID,
+              resource: ev
+            });
+            if (resp?.result?.id) {
+              insertedCount += 1;
+              insertedEvents.push({
+                id: resp.result.id,
+                summary,
+                rowDate,
+                htmlLink: resp.result.htmlLink || ''
+              });
+            } else {
+              failedEvents.push({
+                rowDate,
+                summary,
+                error: 'Insert response did not include an event id.'
+              });
+            }
+          } catch (err) {
+            failedEvents.push({
+              rowDate,
+              summary,
+              error: formatApiError(err)
+            });
+          }
         }
-        return events.length;
+
+        return {
+          insertedCount,
+          insertedEvents,
+          failedCount: failedEvents.length,
+          failedEvents
+        };
       }
 
       async function verifyPlannerEventsInRange(startDate, endDate, expectedCount) {
@@ -996,11 +1077,39 @@
           });
           pageToken = resp.result.nextPageToken;
         } while (pageToken);
+
+        let fallbackPageToken = null;
+        let fallbackCount = 0;
+        const fallbackSample = [];
+        do {
+          const fallbackResp = await window.gapi.client.calendar.events.list({
+            calendarId: CALENDAR_ID,
+            timeMin: startDate.toISOString(),
+            timeMax: endDate.toISOString(),
+            maxResults: 2500,
+            pageToken: fallbackPageToken
+          });
+
+          const fallbackItems = fallbackResp.result.items || [];
+          fallbackItems.forEach(item => {
+            const summary = item?.summary || '';
+            if (!/chip|oppas/i.test(summary)) return;
+            fallbackCount += 1;
+            if (fallbackSample.length >= 5) return;
+            const eventDate = item?.start?.date || item?.start?.dateTime || 'unknown date';
+            fallbackSample.push(`${eventDate} — ${summary}`);
+          });
+
+          fallbackPageToken = fallbackResp.result.nextPageToken;
+        } while (fallbackPageToken);
+
         return {
           count,
           expected: expectedCount,
           pagesScanned,
-          sampleSummaries
+          sampleSummaries,
+          fallbackCount,
+          fallbackSample
         };
       }
 
@@ -1010,7 +1119,9 @@
           count: 0,
           expected: expectedCount,
           pagesScanned: 0,
-          sampleSummaries: []
+          sampleSummaries: [],
+          fallbackCount: 0,
+          fallbackSample: []
         };
 
         for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
@@ -1032,28 +1143,6 @@
         };
       }
 
-      function executeBatch(batch) {
-        return new Promise((resolve, reject) => {
-          batch.execute((response) => {
-            if (!response) {
-              resolve();
-              return;
-            }
-
-            const responses = Object.values(response);
-            const failedResponse = responses.find(item => item?.status && Number(item.status) >= 400);
-            if (failedResponse) {
-              reject({
-                message: failedResponse.body || `Batch request failed with status ${failedResponse.status}`,
-                status: failedResponse.status
-              });
-              return;
-            }
-            resolve(response);
-          });
-        });
-      }
-
       function addOneDay(dateStr) {
         const parsed = new Date(`${dateStr}T00:00:00`);
         if (Number.isNaN(parsed.getTime())) return '';
@@ -1062,12 +1151,9 @@
       }
 
       function buildPlanEvents() {
-        return [...tbody.querySelectorAll('tr')]
-          .map(row => {
-            const rowId = Number(row.dataset.id);
-            const item = data.find(entry => entry.id === rowId);
+        return data
+          .map(item => {
             if (!item || !item.date) return null;
-
             const endDate = addOneDay(item.date);
             if (!endDate) return null;
 
