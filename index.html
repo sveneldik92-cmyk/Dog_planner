@@ -669,6 +669,10 @@
         return today;
       }
 
+      function wait(ms) {
+        return new Promise(resolve => window.setTimeout(resolve, ms));
+      }
+
       function syncOpenOnlyStateWithFilter() {
         openOnlyMode = statusFilter.value === 'open';
         openOnlyBtn.textContent = openOnlyMode ? 'Alle statussen' : 'Alleen open';
@@ -885,7 +889,7 @@
       async function syncNow() {
         if (syncInProgress) return;
         const planEvents = buildPlanEvents();
-        const rangeStart = new Date();
+        const rangeStart = startOfToday();
         const rangeEnd = new Date(rangeStart);
         rangeEnd.setFullYear(rangeEnd.getFullYear() + 1);
         syncInProgress = true;
@@ -899,14 +903,17 @@
         try {
           const deletedCount = await wipeRange(rangeStart, rangeEnd);
           const insertedCount = await insertEvents(planEvents);
-          const verification = await verifyPlannerEventsInRange(rangeStart, rangeEnd, insertedCount);
+          const verification = await verifyPlannerEventsWithRetries(rangeStart, rangeEnd, insertedCount);
           const isVerified = verification.count === insertedCount;
+          const apiSample = verification.sampleSummaries.length
+            ? verification.sampleSummaries.map((entry, index) => `${index + 1}) ${entry}`).join('\n')
+            : 'No tagged planner events were returned yet.';
           showFeedbackDialog({
             title: isVerified ? 'Sync completed' : 'Sync completed with warning',
             message: isVerified
               ? 'Calendar sync succeeded and was verified.'
               : 'Calendar sync request succeeded, but verification found fewer events than expected.',
-            details: `Deleted existing planner events in range: ${deletedCount}\nInserted planner events: ${insertedCount}\nVerified planner events in calendar: ${verification.count}\nCalendar: ${CALENDAR_ID}\nWindow: ${rangeStart.toISOString()} → ${rangeEnd.toISOString()}\n\nTroubleshooting if events are still missing:\n1) Open Google Calendar settings and confirm ${CALENDAR_ID} is visible (not hidden/unchecked).\n2) In Calendar view, navigate directly to a synced date inside the window above.\n3) Refresh Google Calendar (web/app) because API inserts can take a short moment to appear.\n4) Ensure you are signed into the same Google account used during sync.\n5) Click "Load from Google Calendar" to compare what the API can currently read.\n6) If verification remains lower than expected, sign out/in and sync again.`
+            details: `Deleted existing planner events in range: ${deletedCount}\nInserted planner events: ${insertedCount}\nVerified planner events in calendar: ${verification.count}\nVerification attempts used: ${verification.attempts}\nVerification pages scanned (latest attempt): ${verification.pagesScanned}\nCalendar: ${CALENDAR_ID}\nWindow: ${rangeStart.toISOString()} → ${rangeEnd.toISOString()}\n\nSample events currently visible via API:\n${apiSample}\n\nTroubleshooting if events are still missing:\n1) Open Google Calendar settings and confirm ${CALENDAR_ID} is visible (not hidden/unchecked).\n2) In Calendar view, navigate directly to a synced date inside the window above.\n3) Refresh Google Calendar (web/app) because API inserts can take a short moment to appear.\n4) Ensure you are signed into the same Google account used during sync.\n5) Click "Load from Google Calendar" to compare what the API can currently read.\n6) If verification remains lower than expected, sign out/in and sync again.\n7) Check the sample list above: if it stays empty, OAuth may point to a different account or calendar.`
           });
         } catch (err) {
           console.error(err);
@@ -968,6 +975,8 @@
       async function verifyPlannerEventsInRange(startDate, endDate, expectedCount) {
         let pageToken = null;
         let count = 0;
+        let pagesScanned = 0;
+        const sampleSummaries = [];
         do {
           const resp = await window.gapi.client.calendar.events.list({
             calendarId: CALENDAR_ID,
@@ -977,12 +986,49 @@
             pageToken,
             privateExtendedProperty: `plannerSource=${PLANNER_EVENT_SOURCE}`
           });
-          count += resp.result.items?.length || 0;
+          const items = resp.result.items || [];
+          count += items.length;
+          pagesScanned += 1;
+          items.forEach(item => {
+            if (sampleSummaries.length >= 5) return;
+            const eventDate = item?.start?.date || item?.start?.dateTime || 'unknown date';
+            sampleSummaries.push(`${eventDate} — ${item?.summary || '(no summary)'}`);
+          });
           pageToken = resp.result.nextPageToken;
         } while (pageToken);
         return {
           count,
-          expected: expectedCount
+          expected: expectedCount,
+          pagesScanned,
+          sampleSummaries
+        };
+      }
+
+      async function verifyPlannerEventsWithRetries(startDate, endDate, expectedCount) {
+        const maxAttempts = 4;
+        let latest = {
+          count: 0,
+          expected: expectedCount,
+          pagesScanned: 0,
+          sampleSummaries: []
+        };
+
+        for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+          latest = await verifyPlannerEventsInRange(startDate, endDate, expectedCount);
+          if (latest.count >= expectedCount) {
+            return {
+              ...latest,
+              attempts: attempt
+            };
+          }
+          if (attempt < maxAttempts) {
+            await wait(attempt * 1200);
+          }
+        }
+
+        return {
+          ...latest,
+          attempts: maxAttempts
         };
       }
 
