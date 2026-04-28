@@ -511,6 +511,7 @@
         <div class="sync-actions">
           <button id="signin" disabled>Inloggen bij Google</button>
           <button id="pullCalendar" class="ghost-btn" disabled>Uit agenda ophalen</button>
+          <button id="cleanupLegacy" class="ghost-btn" disabled>Clean old untagged planner events</button>
           <button id="sync" disabled>Naar agenda syncen</button>
         </div>
       </section>
@@ -538,6 +539,7 @@
       let gisReady = false;
       let isAuthenticated = false;
       let syncInProgress = false;
+      let lastLegacyCleanupDeletedCount = null;
 
       const DEFAULT_DATA = [
         { id: 1, date: '2026-04-07', sitter: 'Wilma', notes: '' },
@@ -572,6 +574,7 @@
       const currentYear = new Date().getFullYear();
 
       const LOCAL_DATA_STORAGE_KEY = 'oppas-planner:data:v1';
+      const PENDING_DELETED_IDS_STORAGE_KEY = 'oppas-planner:pending-deleted-calendar-ids:v1';
 
       function normalizeDateValue(value) {
         if (!value) return '';
@@ -608,8 +611,16 @@
             id: Number(item.id) || Date.now() + Math.floor(Math.random() * 1000),
             date: normalizeDateValue(item.date),
             sitter: typeof item.sitter === 'string' ? item.sitter : '',
-            notes: typeof item.notes === 'string' ? item.notes : ''
+            notes: typeof item.notes === 'string' ? item.notes : '',
+            calendarEventId: typeof item.calendarEventId === 'string' ? item.calendarEventId : '',
+            calendarEventSummary: typeof item.calendarEventSummary === 'string' ? item.calendarEventSummary : '',
+            calendarEventTagged: Boolean(item.calendarEventTagged)
           }));
+      }
+
+      function sanitizePendingDeletedCalendarEventIds(ids) {
+        if (!Array.isArray(ids)) return [];
+        return [...new Set(ids.filter(id => typeof id === 'string' && id.trim()).map(id => id.trim()))];
       }
 
       function loadLocalRows() {
@@ -625,6 +636,16 @@
         }
       }
 
+      function loadPendingDeletedCalendarEventIds() {
+        try {
+          const raw = localStorage.getItem(PENDING_DELETED_IDS_STORAGE_KEY);
+          if (!raw) return [];
+          return sanitizePendingDeletedCalendarEventIds(JSON.parse(raw));
+        } catch (_err) {
+          return [];
+        }
+      }
+
       function persistLocalRows() {
         localStorage.setItem(LOCAL_DATA_STORAGE_KEY, JSON.stringify({
           updatedAt: new Date().toISOString(),
@@ -632,7 +653,12 @@
         }));
       }
 
+      function persistPendingDeletedCalendarEventIds() {
+        localStorage.setItem(PENDING_DELETED_IDS_STORAGE_KEY, JSON.stringify(pendingDeletedCalendarEventIds));
+      }
+
       let data = loadLocalRows();
+      let pendingDeletedCalendarEventIds = loadPendingDeletedCalendarEventIds();
 
       const tbody = document.getElementById('rows');
       const stats = document.getElementById('stats');
@@ -649,6 +675,7 @@
       const controlsCard = document.getElementById('controlsCard');
       const signinBtn = document.getElementById('signin');
       const pullCalendarBtn = document.getElementById('pullCalendar');
+      const cleanupLegacyBtn = document.getElementById('cleanupLegacy');
       const syncBtn = document.getElementById('sync');
       const feedbackBackdrop = document.getElementById('feedbackBackdrop');
       const feedbackTitle = document.getElementById('feedbackTitle');
@@ -741,6 +768,7 @@
               isAuthenticated = false;
               syncBtn.disabled = true;
               pullCalendarBtn.disabled = true;
+              cleanupLegacyBtn.disabled = true;
               updateSigninButton();
               showFeedbackDialog({
                 title: 'Google sign-in failed',
@@ -754,6 +782,7 @@
             updateSigninButton();
             syncBtn.disabled = false;
             pullCalendarBtn.disabled = false;
+            cleanupLegacyBtn.disabled = false;
             showFeedbackDialog({
               title: 'Sign-in successful',
               message: 'Google authentication succeeded. You can sync to calendar now.'
@@ -807,7 +836,10 @@
           id: index + 1,
           date: eventDate,
           sitter,
-          notes
+          notes,
+          calendarEventId: event?.id || '',
+          calendarEventSummary: event?.summary || '',
+          calendarEventTagged: event?.extendedProperties?.private?.plannerSource === PLANNER_EVENT_SOURCE
         };
       }
 
@@ -901,6 +933,12 @@
         return pieces.join('\n');
       }
 
+      function hasCalendarWritePermissionError(err) {
+        const code = err?.result?.error?.code || err?.status;
+        const message = (err?.result?.error?.message || err?.message || '').toLowerCase();
+        return Number(code) === 403 && /writer|forbidden|insufficient|permission|access/.test(message);
+      }
+
       async function syncNow() {
         if (syncInProgress) return;
         const planEvents = buildPlanEvents();
@@ -924,6 +962,7 @@
 
         try {
           const deleteResult = await wipeRange(rangeStart, rangeEnd);
+          const removedImportedDeleteResult = await deletePendingRemovedImportedEvents();
           const insertResult = await insertEvents(planEvents);
           const { insertedCount } = insertResult;
           const verification = await verifyPlannerEventsWithRetries(rangeStart, rangeEnd, insertedCount);
@@ -940,6 +979,14 @@
           const failedDeleteSample = deleteResult.failedDeletes.length
             ? deleteResult.failedDeletes.map((entry, index) => `${index + 1}) ${entry.eventId} | ${entry.summary || '(no summary)'}\n${entry.error}`).join('\n\n')
             : 'None';
+          const failedRemovedImportedDeleteSample = removedImportedDeleteResult.failedDeletes.length
+            ? removedImportedDeleteResult.failedDeletes.map((entry, index) => `${index + 1}) ${entry.eventId}\n${entry.error}`).join('\n\n')
+            : 'None';
+          const permissionMessage = (deleteResult.hasWritePermissionError
+            || removedImportedDeleteResult.hasWritePermissionError
+            || insertResult.hasWritePermissionError)
+            ? '\n\nYou are signed in but this account cannot modify this calendar. Sign in as the calendar owner or grant ‘Make changes to events’ permission.'
+            : '';
           const title = insertedCount === 0
             ? 'Sync failed'
             : (isVerified ? 'Sync completed' : 'Sync completed with warning');
@@ -951,8 +998,8 @@
 
           showFeedbackDialog({
             title,
-            message,
-            details: `Deleted existing planner events in range: ${deleteResult.deletedCount}\nFailed planner deletes: ${deleteResult.failedDeleteCount}\nInserted planner events: ${insertedCount}\nFailed planner inserts: ${insertResult.failedCount}\nVerified planner events in calendar: ${verification.count}\nVisible matching events without tag: ${verification.fallbackCount}\nVerification attempts used: ${verification.attempts}\nVerification pages scanned (latest attempt): ${verification.pagesScanned}\nCalendar: ${CALENDAR_ID}\nWindow: ${rangeStart.toISOString()} → ${rangeEnd.toISOString()}\n\nInserted event sample (id | summary | htmlLink):\n${insertedSample}\n\nSample tagged events currently visible via API:\n${apiSample}\n\nFallback sample (matching summary without tag filter):\n${verification.fallbackSample.length ? verification.fallbackSample.map((entry, index) => `${index + 1}) ${entry}`).join('\n') : 'No matching events found without tag filter.'}\n\nFailed inserts:\n${failedInsertSample}\n\nFailed deletes:\n${failedDeleteSample}`
+            message: `${message}${permissionMessage}`,
+            details: `Deleted tagged planner events: ${deleteResult.deletedCount}\nDeleted removed imported events: ${removedImportedDeleteResult.deletedCount}\nFailed removed imported deletes: ${removedImportedDeleteResult.failedDeleteCount}\nDeleted old untagged planner events: ${lastLegacyCleanupDeletedCount === null ? 'not run in this session' : lastLegacyCleanupDeletedCount}\nInserted planner events: ${insertedCount}\nFailed inserts: ${insertResult.failedCount}\nFailed deletes: ${deleteResult.failedDeleteCount}\nVerified tagged planner events: ${verification.count}\nVisible matching events without tag: ${verification.fallbackCount}\nVerification attempts used: ${verification.attempts}\nVerification pages scanned (latest attempt): ${verification.pagesScanned}\nCalendar: ${CALENDAR_ID}\nWindow: ${rangeStart.toISOString()} → ${rangeEnd.toISOString()}\n\nInserted event sample (id | summary | htmlLink):\n${insertedSample}\n\nSample tagged events currently visible via API:\n${apiSample}\n\nFallback sample (matching summary without tag filter):\n${verification.fallbackSample.length ? verification.fallbackSample.map((entry, index) => `${index + 1}) ${entry}`).join('\n') : 'No matching events found without tag filter.'}\n\nFailed inserts:\n${failedInsertSample}\n\nFailed tagged deletes:\n${failedDeleteSample}\n\nFailed removed imported deletes:\n${failedRemovedImportedDeleteSample}`
           });
         } catch (err) {
           console.error(err);
@@ -966,13 +1013,52 @@
           syncInProgress = false;
           syncBtn.disabled = !isAuthenticated;
           pullCalendarBtn.disabled = !isAuthenticated;
+          cleanupLegacyBtn.disabled = !isAuthenticated;
         }
+      }
+
+      async function deletePendingRemovedImportedEvents() {
+        let deletedCount = 0;
+        const failedDeletes = [];
+        const successfulDeletes = [];
+        let hasWritePermissionError = false;
+
+        for (const eventId of pendingDeletedCalendarEventIds) {
+          try {
+            await window.gapi.client.calendar.events.delete({
+              calendarId: CALENDAR_ID,
+              eventId
+            });
+            deletedCount += 1;
+            successfulDeletes.push(eventId);
+          } catch (err) {
+            if (hasCalendarWritePermissionError(err)) hasWritePermissionError = true;
+            failedDeletes.push({
+              eventId,
+              error: formatApiError(err)
+            });
+          }
+        }
+
+        if (successfulDeletes.length) {
+          const successfulSet = new Set(successfulDeletes);
+          pendingDeletedCalendarEventIds = pendingDeletedCalendarEventIds.filter(id => !successfulSet.has(id));
+          persistPendingDeletedCalendarEventIds();
+        }
+
+        return {
+          deletedCount,
+          failedDeleteCount: failedDeletes.length,
+          failedDeletes,
+          hasWritePermissionError
+        };
       }
 
       async function wipeRange(startDate, endDate) {
         let pageToken = null;
         let deletedCount = 0;
         const failedDeletes = [];
+        let hasWritePermissionError = false;
         do {
           const resp = await window.gapi.client.calendar.events.list({
             calendarId: CALENDAR_ID,
@@ -991,6 +1077,7 @@
               });
               deletedCount += 1;
             } catch (err) {
+              if (hasCalendarWritePermissionError(err)) hasWritePermissionError = true;
               failedDeletes.push({
                 eventId: ev.id,
                 summary: ev.summary || '',
@@ -1004,7 +1091,8 @@
         return {
           deletedCount,
           failedDeleteCount: failedDeletes.length,
-          failedDeletes
+          failedDeletes,
+          hasWritePermissionError
         };
       }
 
@@ -1012,6 +1100,7 @@
         let insertedCount = 0;
         const insertedEvents = [];
         const failedEvents = [];
+        let hasWritePermissionError = false;
 
         for (const ev of events) {
           const rowDate = ev?.start?.date || 'unknown date';
@@ -1037,6 +1126,7 @@
               });
             }
           } catch (err) {
+            if (hasCalendarWritePermissionError(err)) hasWritePermissionError = true;
             failedEvents.push({
               rowDate,
               summary,
@@ -1049,8 +1139,102 @@
           insertedCount,
           insertedEvents,
           failedCount: failedEvents.length,
-          failedEvents
+          failedEvents,
+          hasWritePermissionError
         };
+      }
+
+      function isLegacyPlannerLikeSummary(summary) {
+        if (!summary) return false;
+        const lowerSummary = summary.toLowerCase();
+        return lowerSummary.includes('chip opas')
+          || lowerSummary.includes('chip, oppas')
+          || lowerSummary.startsWith('problem chip')
+          || lowerSummary.includes('oppas');
+      }
+
+      async function listLegacyPlannerLikeEvents(startDate, endDate) {
+        let pageToken = null;
+        const legacyEvents = [];
+        do {
+          const resp = await window.gapi.client.calendar.events.list({
+            calendarId: CALENDAR_ID,
+            timeMin: startDate.toISOString(),
+            timeMax: endDate.toISOString(),
+            maxResults: 2500,
+            pageToken,
+            singleEvents: true,
+            orderBy: 'startTime'
+          });
+          const items = resp.result.items || [];
+          items.forEach(item => {
+            const summary = item?.summary || '';
+            const isTagged = item?.extendedProperties?.private?.plannerSource === PLANNER_EVENT_SOURCE;
+            if (isTagged || !isLegacyPlannerLikeSummary(summary)) return;
+            legacyEvents.push(item);
+          });
+          pageToken = resp.result.nextPageToken || null;
+        } while (pageToken);
+        return legacyEvents;
+      }
+
+      async function runLegacyCleanup() {
+        if (!isAuthenticated || !window.gapi?.client?.calendar || syncInProgress) return;
+        cleanupLegacyBtn.disabled = true;
+        const rangeStart = startOfToday();
+        const rangeEnd = new Date(rangeStart);
+        rangeEnd.setFullYear(rangeEnd.getFullYear() + 1);
+
+        try {
+          const legacyEvents = await listLegacyPlannerLikeEvents(rangeStart, rangeEnd);
+          const sample = legacyEvents.slice(0, 8).map((event, index) => {
+            const eventDate = event?.start?.date || event?.start?.dateTime || 'unknown date';
+            return `${index + 1}) ${eventDate} — ${event?.summary || '(no summary)'}`;
+          }).join('\n');
+          const confirmed = window.confirm(`This will delete old untagged Chip/oppas events from this calendar. Continue?\n\nFound: ${legacyEvents.length}\n\nSample:\n${sample || 'No matching events found.'}`);
+          if (!confirmed) return;
+
+          let deletedCount = 0;
+          const failedDeletes = [];
+          let hasWritePermissionError = false;
+          for (const event of legacyEvents) {
+            try {
+              await window.gapi.client.calendar.events.delete({
+                calendarId: CALENDAR_ID,
+                eventId: event.id
+              });
+              deletedCount += 1;
+            } catch (err) {
+              if (hasCalendarWritePermissionError(err)) hasWritePermissionError = true;
+              failedDeletes.push({
+                eventId: event.id,
+                summary: event.summary || '',
+                error: formatApiError(err)
+              });
+            }
+          }
+
+          const failedDeleteSample = failedDeletes.length
+            ? failedDeletes.map((entry, index) => `${index + 1}) ${entry.eventId} | ${entry.summary}\n${entry.error}`).join('\n\n')
+            : 'None';
+          const permissionMessage = hasWritePermissionError
+            ? '\n\nYou are signed in but this account cannot modify this calendar. Sign in as the calendar owner or grant ‘Make changes to events’ permission.'
+            : '';
+          lastLegacyCleanupDeletedCount = deletedCount;
+          showFeedbackDialog({
+            title: 'Legacy cleanup result',
+            message: `Deleted old untagged planner events: ${deletedCount}.${permissionMessage}`,
+            details: `Deleted old untagged planner events: ${deletedCount}\nFailed deletes: ${failedDeletes.length}\nCalendar: ${CALENDAR_ID}\nWindow: ${rangeStart.toISOString()} → ${rangeEnd.toISOString()}\n\nFailed deletes:\n${failedDeleteSample}`
+          });
+        } catch (err) {
+          showFeedbackDialog({
+            title: 'Legacy cleanup failed',
+            message: 'Could not clean old untagged planner-like events.',
+            details: formatApiError(err)
+          });
+        } finally {
+          cleanupLegacyBtn.disabled = !isAuthenticated;
+        }
       }
 
       async function verifyPlannerEventsInRange(startDate, endDate, expectedCount) {
@@ -1300,7 +1484,10 @@
           id: nextId,
           date: new Date().toISOString().slice(0, 10),
           sitter: '',
-          notes: ''
+          notes: '',
+          calendarEventId: '',
+          calendarEventSummary: '',
+          calendarEventTagged: false
         });
         refreshSitterFilterOptions();
         renderRows();
@@ -1310,6 +1497,11 @@
       function deleteRow(id) {
         const index = data.findIndex(row => row.id === id);
         if (index === -1) return;
+        const row = data[index];
+        if (row?.calendarEventId && !pendingDeletedCalendarEventIds.includes(row.calendarEventId)) {
+          pendingDeletedCalendarEventIds.push(row.calendarEventId);
+          persistPendingDeletedCalendarEventIds();
+        }
         data.splice(index, 1);
         refreshSitterFilterOptions();
         renderRows();
@@ -1420,6 +1612,7 @@
       addRowBtn.addEventListener('click', addNewRow);
       signinBtn.addEventListener('click', handleAuth);
       pullCalendarBtn.addEventListener('click', pullFromCalendar);
+      cleanupLegacyBtn.addEventListener('click', runLegacyCleanup);
       syncBtn.addEventListener('click', syncNow);
       feedbackClose.addEventListener('click', closeFeedbackDialog);
       feedbackBackdrop.addEventListener('click', event => {
