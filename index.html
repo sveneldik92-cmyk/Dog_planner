@@ -268,6 +268,14 @@
         gap: .55rem;
       }
 
+      .agenda-primary {
+        border-color: #bed0ff;
+      }
+
+      .primary-btn {
+        background: #143f9e;
+      }
+
       .sync-actions button[disabled] {
         opacity: .58;
         cursor: not-allowed;
@@ -279,6 +287,29 @@
 
       .hidden {
         display: none;
+      }
+
+      .source-status-message {
+        margin: .1rem 1rem 1rem;
+        color: var(--muted);
+        font-size: .9rem;
+      }
+
+      .empty-state {
+        margin: .8rem 1rem 0;
+        padding: .9rem;
+        border: 1px dashed var(--line-strong);
+        border-radius: 12px;
+        background: #fbfcff;
+      }
+
+      .empty-state strong {
+        display: block;
+        margin-bottom: .2rem;
+      }
+
+      .controls-locked {
+        opacity: .65;
       }
 
       .dialog-backdrop {
@@ -443,6 +474,30 @@
         <div class="stats" id="stats"></div>
       </section>
 
+      <section class="card utility agenda-primary">
+        <div class="card-head">
+          <div>
+            <h2>Google Agenda</h2>
+            <p>Bron van waarheid: laad eerst je agenda en bewerk daarna tijdelijk op de website.</p>
+          </div>
+        </div>
+        <div class="sync-actions">
+          <button id="signin" disabled>Inloggen bij Google</button>
+          <button id="pullCalendar" class="primary-btn" disabled>Uit agenda ophalen</button>
+          <button id="sync" disabled>Naar agenda syncen</button>
+          <button id="cleanupLegacy" class="ghost-btn" disabled>Clean old untagged planner events</button>
+        </div>
+      </section>
+
+      <section class="card utility">
+        <div class="card-head">
+          <div>
+            <h2>Bronstatus</h2>
+          </div>
+        </div>
+        <p id="sourceStatus" class="source-status-message">Bron: Google Agenda. Website bevat nog geen geladen werkversie.</p>
+      </section>
+
       <section class="card controls" id="controlsCard">
         <div class="card-head">
           <div>
@@ -487,6 +542,10 @@
             <p>Komende datums, status en oppas in één overzicht.</p>
           </div>
         </div>
+        <div id="emptyState" class="empty-state hidden">
+          <strong>Geen planning geladen</strong>
+          <span>Log in en klik op ‘Uit agenda ophalen’ om de actuele planning uit Google Agenda te laden.</span>
+        </div>
         <table>
           <thead>
             <tr>
@@ -501,20 +560,6 @@
         </table>
       </section>
 
-      <section class="card utility">
-        <div class="card-head">
-          <div>
-            <h2>Google Agenda</h2>
-            <p>Inloggen en synchroniseren wanneer nodig.</p>
-          </div>
-        </div>
-        <div class="sync-actions">
-          <button id="signin" disabled>Inloggen bij Google</button>
-          <button id="pullCalendar" class="ghost-btn" disabled>Uit agenda ophalen</button>
-          <button id="cleanupLegacy" class="ghost-btn" disabled>Clean old untagged planner events</button>
-          <button id="sync" disabled>Naar agenda syncen</button>
-        </div>
-      </section>
     </div>
 
     <div id="feedbackBackdrop" class="dialog-backdrop" role="dialog" aria-modal="true" aria-labelledby="feedbackTitle">
@@ -541,31 +586,6 @@
       let syncInProgress = false;
       let lastLegacyCleanupDeletedCount = null;
 
-      const DEFAULT_DATA = [
-        { id: 1, date: '2026-04-07', sitter: 'Wilma', notes: '' },
-        { id: 2, date: '2026-04-09', sitter: 'K&P', notes: '' },
-        { id: 3, date: '2026-04-10', sitter: 'Sven', notes: '' },
-        { id: 4, date: '2026-04-13', sitter: 'Wilma', notes: '' },
-        { id: 5, date: '2026-04-15', sitter: 'Maaike', notes: '' },
-        { id: 6, date: '2026-04-16', sitter: 'K&P', notes: '' },
-        { id: 7, date: '2026-04-17', sitter: 'Sven', notes: '' },
-        { id: 8, date: '2026-04-20', sitter: 'Wilma', notes: '' },
-        { id: 9, date: '2026-04-21', sitter: 'Wilma', notes: '' },
-        { id: 10, date: '2026-04-22', sitter: 'Maaike', notes: '' },
-        { id: 11, date: '2026-04-24', sitter: 'K&P', notes: '' },
-        { id: 12, date: '2026-04-29', sitter: 'Maaike', notes: '' },
-        { id: 13, date: '2026-04-30', sitter: 'Wilma', notes: '' },
-        { id: 14, date: '2026-05-04', sitter: '', notes: '' },
-        { id: 15, date: '2026-05-06', sitter: '', notes: '' },
-        { id: 16, date: '2026-05-07', sitter: '', notes: '' },
-        { id: 17, date: '2026-05-11', sitter: '', notes: '' },
-        { id: 18, date: '2026-05-12', sitter: '', notes: '' },
-        { id: 19, date: '2026-05-14', sitter: 'K&P', notes: '' },
-        { id: 20, date: '2026-05-15', sitter: 'K&P', notes: '' },
-        { id: 21, date: '2026-05-16', sitter: 'K&P', notes: '' },
-        { id: 22, date: '2026-05-17', sitter: 'K&P', notes: '' }
-      ];
-
       const monthToNumber = {
         Jan: '01', Feb: '02', Mar: '03', Apr: '04', May: '05', Jun: '06',
         Jul: '07', Aug: '08', Sep: '09', Oct: '10', Nov: '11', Dec: '12'
@@ -573,7 +593,6 @@
       const OPPAS_OPTIONS = ['K&P', 'Maaike', 'Sven', 'Wilma'];
       const currentYear = new Date().getFullYear();
 
-      const LOCAL_DATA_STORAGE_KEY = 'oppas-planner:data:v1';
       const PENDING_DELETED_IDS_STORAGE_KEY = 'oppas-planner:pending-deleted-calendar-ids:v1';
 
       function normalizeDateValue(value) {
@@ -623,19 +642,6 @@
         return [...new Set(ids.filter(id => typeof id === 'string' && id.trim()).map(id => id.trim()))];
       }
 
-      function loadLocalRows() {
-        const fallback = sanitizeRows(DEFAULT_DATA);
-        try {
-          const raw = localStorage.getItem(LOCAL_DATA_STORAGE_KEY);
-          if (!raw) return fallback;
-          const parsed = JSON.parse(raw);
-          const rows = sanitizeRows(parsed?.events);
-          return rows.length ? rows : fallback;
-        } catch (_err) {
-          return fallback;
-        }
-      }
-
       function loadPendingDeletedCalendarEventIds() {
         try {
           const raw = localStorage.getItem(PENDING_DELETED_IDS_STORAGE_KEY);
@@ -646,18 +652,13 @@
         }
       }
 
-      function persistLocalRows() {
-        localStorage.setItem(LOCAL_DATA_STORAGE_KEY, JSON.stringify({
-          updatedAt: new Date().toISOString(),
-          events: data
-        }));
-      }
-
       function persistPendingDeletedCalendarEventIds() {
         localStorage.setItem(PENDING_DELETED_IDS_STORAGE_KEY, JSON.stringify(pendingDeletedCalendarEventIds));
       }
 
-      let data = loadLocalRows();
+      let data = [];
+      let calendarLoaded = false;
+      let sourceStatusMode = 'initial';
       let pendingDeletedCalendarEventIds = loadPendingDeletedCalendarEventIds();
 
       const tbody = document.getElementById('rows');
@@ -682,6 +683,8 @@
       const feedbackMessage = document.getElementById('feedbackMessage');
       const feedbackDetails = document.getElementById('feedbackDetails');
       const feedbackClose = document.getElementById('feedbackClose');
+      const sourceStatus = document.getElementById('sourceStatus');
+      const emptyState = document.getElementById('emptyState');
 
       let isEditMode = false;
       let showPastDates = false;
@@ -720,6 +723,49 @@
 
       function closeFeedbackDialog() {
         feedbackBackdrop.classList.remove('open');
+      }
+
+      function showLoadCalendarFirstMessage() {
+        showFeedbackDialog({
+          title: 'Agenda laden nodig',
+          message: 'Laad eerst de agenda met ‘Uit agenda ophalen’.'
+        });
+      }
+
+      function updateSourceStatusText() {
+        if (sourceStatusMode === 'synced') {
+          sourceStatus.textContent = 'Google Agenda bijgewerkt. Website werkversie is gewist.';
+          return;
+        }
+        if (sourceStatusMode === 'loaded' && calendarLoaded) {
+          sourceStatus.textContent = 'Werkversie geladen uit Google Agenda. Bewerk hier en sync daarna terug.';
+          return;
+        }
+        sourceStatus.textContent = 'Bron: Google Agenda. Website bevat nog geen geladen werkversie.';
+      }
+
+      function updatePlannerControlsAvailability() {
+        const controlsEnabled = calendarLoaded;
+        statusFilter.disabled = !controlsEnabled;
+        sitterFilter.disabled = !controlsEnabled;
+        resetBtn.disabled = !controlsEnabled;
+        togglePastBtn.disabled = !controlsEnabled;
+        openOnlyBtn.disabled = !controlsEnabled;
+        controlsCard.classList.toggle('controls-locked', !controlsEnabled);
+
+        if (!controlsEnabled && isEditMode) {
+          isEditMode = false;
+          editModeBtn.classList.remove('edit-mode-active');
+          addRowBtn.classList.add('hidden');
+          controlsCard.classList.remove('edit-surface');
+          actionsHead.classList.add('hidden');
+          statusHead.classList.remove('hidden');
+          modeHint.textContent = 'Bewerkmodus staat uit (alleen lezen).';
+          editModeBtn.textContent = 'Bewerkmodus uit';
+        }
+
+        const hasSyncWork = buildPlanEvents().length > 0 || pendingDeletedCalendarEventIds.length > 0;
+        syncBtn.disabled = !isAuthenticated || !calendarLoaded || !hasSyncWork || syncInProgress;
       }
 
       function updateSigninButton() {
@@ -780,12 +826,12 @@
             window.gapi.client.setToken(resp);
             isAuthenticated = true;
             updateSigninButton();
-            syncBtn.disabled = false;
             pullCalendarBtn.disabled = false;
             cleanupLegacyBtn.disabled = false;
+            updatePlannerControlsAvailability();
             showFeedbackDialog({
               title: 'Sign-in successful',
-              message: 'Google authentication succeeded. You can sync to calendar now.'
+              message: 'Google authentication succeeded. Klik nu op “Uit agenda ophalen” om de planning te laden.'
             });
           }
         });
@@ -880,10 +926,14 @@
             .filter(Boolean)
             .sort((a, b) => a.date.localeCompare(b.date));
 
+          data = [];
           data = importedRows;
-          persistLocalRows();
+          calendarLoaded = true;
+          sourceStatusMode = 'loaded';
           refreshSitterFilterOptions();
           renderRows();
+          updateSourceStatusText();
+          updatePlannerControlsAvailability();
 
           showFeedbackDialog({
             title: 'Calendar import completed',
@@ -891,6 +941,12 @@
             details: `Calendar: ${CALENDAR_ID}\nWindow: ${rangeStart.toISOString()} → ${rangeEnd.toISOString()}`
           });
         } catch (err) {
+          if (!calendarLoaded) {
+            data = [];
+            refreshSitterFilterOptions();
+            renderRows();
+            updatePlannerControlsAvailability();
+          }
           showFeedbackDialog({
             title: 'Calendar import failed',
             message: 'Could not load planner data from Google Calendar.',
@@ -941,11 +997,18 @@
 
       async function syncNow() {
         if (syncInProgress) return;
-        const planEvents = buildPlanEvents();
-        if (!planEvents.length) {
+        if (!calendarLoaded) {
           showFeedbackDialog({
             title: 'Nothing to sync',
-            message: 'No valid dated planner rows were found.'
+            message: 'Load the calendar first or add planner rows before syncing.'
+          });
+          return;
+        }
+        const planEvents = buildPlanEvents();
+        if (!planEvents.length && !pendingDeletedCalendarEventIds.length) {
+          showFeedbackDialog({
+            title: 'Nothing to sync',
+            message: 'Load the calendar first or add planner rows before syncing.'
           });
           return;
         }
@@ -1001,6 +1064,21 @@
             message: `${message}${permissionMessage}`,
             details: `Deleted tagged planner events: ${deleteResult.deletedCount}\nDeleted removed imported events: ${removedImportedDeleteResult.deletedCount}\nFailed removed imported deletes: ${removedImportedDeleteResult.failedDeleteCount}\nDeleted old untagged planner events: ${lastLegacyCleanupDeletedCount === null ? 'not run in this session' : lastLegacyCleanupDeletedCount}\nInserted planner events: ${insertedCount}\nFailed inserts: ${insertResult.failedCount}\nFailed deletes: ${deleteResult.failedDeleteCount}\nVerified tagged planner events: ${verification.count}\nVisible matching events without tag: ${verification.fallbackCount}\nVerification attempts used: ${verification.attempts}\nVerification pages scanned (latest attempt): ${verification.pagesScanned}\nCalendar: ${CALENDAR_ID}\nWindow: ${rangeStart.toISOString()} → ${rangeEnd.toISOString()}\n\nInserted event sample (id | summary | htmlLink):\n${insertedSample}\n\nSample tagged events currently visible via API:\n${apiSample}\n\nFallback sample (matching summary without tag filter):\n${verification.fallbackSample.length ? verification.fallbackSample.map((entry, index) => `${index + 1}) ${entry}`).join('\n') : 'No matching events found without tag filter.'}\n\nFailed inserts:\n${failedInsertSample}\n\nFailed tagged deletes:\n${failedDeleteSample}\n\nFailed removed imported deletes:\n${failedRemovedImportedDeleteSample}`
           });
+
+          if (insertedCount > 0 && isVerified) {
+            data = [];
+            calendarLoaded = false;
+            sourceStatusMode = 'synced';
+            isEditMode = false;
+            refreshSitterFilterOptions();
+            renderRows();
+            updateSourceStatusText();
+            updatePlannerControlsAvailability();
+            showFeedbackDialog({
+              title: 'Sync completed',
+              message: 'Calendar updated. The website working copy has been cleared. Click ‘Uit agenda ophalen’ again to edit.'
+            });
+          }
         } catch (err) {
           console.error(err);
           const details = `${formatApiError(err)}\n\nTroubleshooting:\n1) Confirm you are signed in with access to ${CALENDAR_ID}.\n2) If the error code is 401/403, click "Sign in to Google" again.\n3) Verify Calendar API is enabled for this Google Cloud OAuth client.\n4) Check whether browser extensions are blocking Google auth or requests.`;
@@ -1011,9 +1089,9 @@
           });
         } finally {
           syncInProgress = false;
-          syncBtn.disabled = !isAuthenticated;
           pullCalendarBtn.disabled = !isAuthenticated;
           cleanupLegacyBtn.disabled = !isAuthenticated;
+          updatePlannerControlsAvailability();
         }
       }
 
@@ -1379,6 +1457,14 @@
       }
 
       function renderStats(list) {
+        if (!calendarLoaded) {
+          stats.innerHTML = `
+            <div class="stat"><small>Total</small><strong>0</strong></div>
+            <div class="stat"><small>Geregeld</small><strong>0</strong></div>
+            <div class="stat"><small>Open</small><strong>0</strong></div>
+          `;
+          return;
+        }
         const done = list.filter(item => deriveStatus(item) === 'done').length;
         const open = list.filter(item => deriveStatus(item) === 'open').length;
         stats.innerHTML = `
@@ -1452,11 +1538,18 @@
 
       function renderRows() {
         const filtered = getFilteredData();
+        const showEmptyState = !calendarLoaded || data.length === 0;
+        emptyState.classList.toggle('hidden', !showEmptyState);
         tbody.innerHTML = filtered.map(item => isEditMode ? renderEditRow(item) : renderDisplayRow(item)).join('');
         renderStats(filtered);
+        updatePlannerControlsAvailability();
       }
 
       function toggleEditMode() {
+        if (!calendarLoaded) {
+          showLoadCalendarFirstMessage();
+          return;
+        }
         isEditMode = !isEditMode;
         editModeBtn.textContent = isEditMode ? 'Bewerkmodus aan' : 'Bewerkmodus uit';
         editModeBtn.classList.toggle('edit-mode-active', isEditMode);
@@ -1475,10 +1568,13 @@
         if (!item) return;
 
         item[field] = value;
-        persistLocalRows();
       }
 
       function addNewRow() {
+        if (!calendarLoaded) {
+          showLoadCalendarFirstMessage();
+          return;
+        }
         const nextId = data.reduce((max, row) => Math.max(max, row.id), 0) + 1;
         data.push({
           id: nextId,
@@ -1491,7 +1587,6 @@
         });
         refreshSitterFilterOptions();
         renderRows();
-        persistLocalRows();
       }
 
       function deleteRow(id) {
@@ -1505,7 +1600,6 @@
         data.splice(index, 1);
         refreshSitterFilterOptions();
         renderRows();
-        persistLocalRows();
       }
 
       function confirmDeleteRow(id) {
@@ -1561,7 +1655,6 @@
           updateItem(id, 'sitter', customOppas.trim());
           refreshSitterFilterOptions();
           renderRows();
-          persistLocalRows();
           return;
         }
 
@@ -1588,6 +1681,10 @@
       statusFilter.addEventListener('change', renderRows);
       sitterFilter.addEventListener('change', renderRows);
       resetBtn.addEventListener('click', () => {
+        if (!calendarLoaded) {
+          showLoadCalendarFirstMessage();
+          return;
+        }
         statusFilter.value = 'all';
         sitterFilter.value = 'all';
         openOnlyMode = false;
@@ -1597,11 +1694,19 @@
         renderRows();
       });
       togglePastBtn.addEventListener('click', () => {
+        if (!calendarLoaded) {
+          showLoadCalendarFirstMessage();
+          return;
+        }
         showPastDates = !showPastDates;
         togglePastBtn.textContent = showPastDates ? 'Verleden verbergen' : 'Verleden tonen';
         renderRows();
       });
       openOnlyBtn.addEventListener('click', () => {
+        if (!calendarLoaded) {
+          showLoadCalendarFirstMessage();
+          return;
+        }
         openOnlyMode = !openOnlyMode;
         statusFilter.value = openOnlyMode ? 'open' : 'all';
         syncOpenOnlyStateWithFilter();
@@ -1621,6 +1726,7 @@
 
       refreshSitterFilterOptions();
       syncOpenOnlyStateWithFilter();
+      updateSourceStatusText();
       renderRows();
       initializeGoogleLibraries();
     </script>
